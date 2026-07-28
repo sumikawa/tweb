@@ -60,6 +60,33 @@ WELCOME_PAGE = ROOT / "tweb" / "data" / "welcome.html"
 
 
 class TuiTest(unittest.IsolatedAsyncioTestCase):
+  def _freebsd_fragment_source(self) -> Resource:
+    return Resource(
+      source="https://example.com/freebsd",
+      content="""
+      <html>
+        <body>
+          <h1>FreeBSD</h1>
+          <p>Introductory paragraph with a citation <sup><a href="#cite_note-8">8</a></sup>.</p>
+          <p>Line 1 filler content for scrolling.</p>
+          <p>Line 2 filler content for scrolling.</p>
+          <p>Line 3 filler content for scrolling.</p>
+          <p>Line 4 filler content for scrolling.</p>
+          <p>Line 5 filler content for scrolling.</p>
+          <p>Line 6 filler content for scrolling.</p>
+          <p>Line 7 filler content for scrolling.</p>
+          <p>Line 8 filler content for scrolling.</p>
+          <p>Line 9 filler content for scrolling.</p>
+          <p>Line 10 filler content for scrolling.</p>
+          <h2>References</h2>
+          <ol>
+            <li id="cite_note-8">Footnote target line with FreeBSD release details.</li>
+          </ol>
+        </body>
+      </html>
+      """,
+    )
+
   def _metadata_links(
     self,
     rendered: str,
@@ -1648,31 +1675,7 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("button updated DOM", str(app.query_one("#status", Static).content))
 
   async def test_enter_same_page_fragment_jumps_without_reloading(self) -> None:
-    source = Resource(
-      source="https://example.com/freebsd",
-      content="""
-      <html>
-        <body>
-          <h1>FreeBSD</h1>
-          <p>Introductory paragraph with a citation <sup><a href="#cite_note-8">8</a></sup>.</p>
-          <p>Line 1 filler content for scrolling.</p>
-          <p>Line 2 filler content for scrolling.</p>
-          <p>Line 3 filler content for scrolling.</p>
-          <p>Line 4 filler content for scrolling.</p>
-          <p>Line 5 filler content for scrolling.</p>
-          <p>Line 6 filler content for scrolling.</p>
-          <p>Line 7 filler content for scrolling.</p>
-          <p>Line 8 filler content for scrolling.</p>
-          <p>Line 9 filler content for scrolling.</p>
-          <p>Line 10 filler content for scrolling.</p>
-          <h2>References</h2>
-          <ol>
-            <li id="cite_note-8">Footnote target line with FreeBSD release details.</li>
-          </ol>
-        </body>
-      </html>
-      """,
-    )
+    source = self._freebsd_fragment_source()
     app = TwebBrowserApp(source.source, width=80)
 
     with patch("tweb.tui.fetch_resource", return_value=source) as mock_fetch_resource:
@@ -1703,6 +1706,41 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
         )
         current_line, _column = app.current_page.buffer.line_col(app.cursor_index)
         self.assertGreater(current_line, 0)
+        current_text = app.current_page.buffer.text.splitlines()[current_line]
+        self.assertIn("Footnote target line with FreeBSD release details.", current_text)
+
+  async def test_initial_target_fragment_jumps_to_target_line_after_load(self) -> None:
+    source = self._freebsd_fragment_source()
+    app = TwebBrowserApp(f"{source.source}#cite_note-8", width=80)
+
+    with patch("tweb.tui.fetch_resource", return_value=source) as mock_fetch_resource:
+      async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+
+        self.assertEqual(mock_fetch_resource.call_count, 1)
+        self.assertEqual(app.current_page.resource.source, "https://example.com/freebsd#cite_note-8")
+        self.assertEqual([request.target for request in app.navigation_history], ["https://example.com/freebsd#cite_note-8"])
+        self.assertEqual([request.target for request in app.history], ["https://example.com/freebsd#cite_note-8"])
+        current_line, _column = app.current_page.buffer.line_col(app.cursor_index)
+        self.assertGreater(current_line, 0)
+        current_text = app.current_page.buffer.text.splitlines()[current_line]
+        self.assertIn("Footnote target line with FreeBSD release details.", current_text)
+        self.assertFalse(app.current_page.is_partial)
+
+  async def test_initial_target_fragment_skips_partial_render_budget(self) -> None:
+    class PartialRenderApp(TwebBrowserApp):
+      def _initial_render_block_budget(self) -> int | None:
+        return 2
+
+    source = self._freebsd_fragment_source()
+    app = PartialRenderApp(f"{source.source}#cite_note-8", width=80)
+
+    with patch("tweb.tui.fetch_resource", return_value=source):
+      async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+
+        self.assertFalse(app.current_page.is_partial)
+        current_line, _column = app.current_page.buffer.line_col(app.cursor_index)
         current_text = app.current_page.buffer.text.splitlines()[current_line]
         self.assertIn("Footnote target line with FreeBSD release details.", current_text)
 

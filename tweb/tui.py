@@ -1750,6 +1750,8 @@ class TwebBrowserApp(App[None]):
     self.active_loading_message = f"Connecting {request.target}..."
     self._set_loading_status(f"Connecting {request.target}...")
     initial_block_budget = self._initial_render_block_budget()
+    if urlparse(request.target).fragment:
+      initial_block_budget = None
     self.loading_worker = self.run_worker(
       lambda: LoadResult(
         request=request,
@@ -1807,6 +1809,9 @@ class TwebBrowserApp(App[None]):
     )
     self._clear_pane_focus()
     self.current_page = result.page
+    if urlparse(result.request.target).fragment:
+      self.current_page.document.document.source = result.request.target
+      self.current_page.resource.source = result.request.target
     track_visit_history = (
       history_request.target.strip()
       and (
@@ -1827,8 +1832,14 @@ class TwebBrowserApp(App[None]):
       self.history = self._dedupe_history_requests(self.history, incoming=history_request)
       self.history.append(history_request)
       self._save_persistent_history()
-    self._set_cursor_position(result.page.buffer.first_cursor_index())
-    self.viewport_line = 0
+    target_cursor = _fragment_cursor_for_target(result.page, result.request.target)
+    if target_cursor is None:
+      self._set_cursor_position(result.page.buffer.first_cursor_index())
+      self.viewport_line = 0
+    else:
+      target_line, _target_column = result.page.buffer.line_col(target_cursor)
+      self._set_cursor_position(target_cursor)
+      self.viewport_line = target_line
     self._update_content_title()
     self._sync_cursor()
     if result.page.is_partial:
@@ -2526,10 +2537,7 @@ class TwebBrowserApp(App[None]):
     current_source = self.current_page.resource.source
     if _without_fragment(target) != _without_fragment(current_source):
       return False
-    element = self.current_page.document.find(attrs={"id": fragment})
-    if element is None:
-      return False
-    cursor_index = _cursor_index_for_fragment_target(self.current_page.buffer, element.node)
+    cursor_index = _fragment_cursor_for_target(self.current_page, target)
     if cursor_index is None:
       return False
     self.current_page.document.document.source = target
@@ -3339,6 +3347,16 @@ def _resolve_target(current_source: str, href: str) -> str:
 def _without_fragment(target: str) -> str:
   parsed = urlparse(target)
   return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+
+
+def _fragment_cursor_for_target(page: BrowserPage, target: str) -> int | None:
+  fragment = urlparse(target).fragment
+  if not fragment:
+    return None
+  element = page.document.find(attrs={"id": fragment})
+  if element is None:
+    return None
+  return _cursor_index_for_fragment_target(page.buffer, element.node)
 
 
 def _cursor_index_for_fragment_target(buffer: RenderedBuffer, node: ElementNode) -> int | None:
