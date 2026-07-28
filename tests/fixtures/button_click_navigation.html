@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Button Navigation</title>
+  </head>
+  <body>
+    <p id="status">Still here</p>
+    <button id="next-button" type="button">Open next page</button>
+    <script>
+      document.getElementById("next-button").addEventListener("click", () => {
+        document.getElementById("status").textContent = "Trying navigation";
+        location.assign("/next");
+      });
+    </script>
+  </body>
+</html>

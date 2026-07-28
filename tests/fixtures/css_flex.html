@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <title>Flex Layout Sample</title>
+    <style>
+      .menu {
+        display: flex;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .label {
+        display: inline-flex;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="menu">
+      <div>Home</div>
+      <div>Docs</div>
+      <div>About</div>
+    </nav>
+
+    <section class="stack">
+      <div>Alpha</div>
+      <div>Beta</div>
+    </section>
+
+    <p>Status: <span class="label"><strong>Ready</strong><span>now</span></span></p>
+  </body>
+</html>

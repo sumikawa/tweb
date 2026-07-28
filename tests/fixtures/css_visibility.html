@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <title>css visibility sample</title>
+    <style>
+      .hidden-by-style {
+        display: none;
+      }
+
+      @media screen and (max-width: 700px) {
+        .mobile-hidden {
+          visibility: hidden;
+        }
+      }
+
+      @media screen and (min-width: 900px) {
+        .desktop-hidden {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Visible paragraph.</p>
+      <p hidden>Hidden attribute paragraph.</p>
+      <p class="hidden-by-style">Display none paragraph.</p>
+      <p class="mobile-hidden">Hidden only in narrow viewport.</p>
+      <p class="desktop-hidden">Hidden only in wide viewport.</p>
+      <p style="visibility: hidden">Inline hidden paragraph.</p>
+    </main>
+  </body>
+</html>

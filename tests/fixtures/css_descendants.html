@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <title>css descendant sample</title>
+    <style>
+      .wrapper .desc-bold {
+        font-weight: bold;
+      }
+
+      figure .caption-text {
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrapper">
+      <p><span class="desc-bold">Descendant bold</span></p>
+      <figure>
+        <figcaption><span class="caption-text">Nested caption</span></figcaption>
+      </figure>
+    </main>
+  </body>
+</html>

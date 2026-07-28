@@ -1,0 +1,336 @@
+{
+  "version": 4,
+  "curated_on": "2026-07-24",
+  "selection_basis": "Unified representative audit inventory covering both Japanese and English surfaces. active_site_ids identifies the current focused cohort and is updated whenever live reruns change the current focus; verified match targets move back to the canonical reserve, while unresolved minor_gap, major_gap, quickjs_error, chrome_error, challenge_branch, and unverified_recently targets move into active verification subject to benchmark usefulness. Existing unresolved canonical reserves are promoted before previously audited unresolved sites are reintroduced. The complete inventory remains tag-filterable by dimensions such as jp/en and domain category.",
+  "active_site_ids": [
+    "qiita-home",
+    "jalan-home",
+    "ndl-home",
+    "yahoo-news-jp-home",
+    "gnavi-home",
+    "env-home",
+    "mlit-home",
+    "rakuten-travel-home",
+    "gihyo-home",
+    "walgreens-home",
+    "kayak-home",
+    "eventbrite-home",
+    "walmart-home",
+    "fsa-home",
+    "navitime-home",
+    "jaxa-home",
+    "accuweather-home",
+    "skyscanner-home",
+    "webmd-home"
+  ],
+  "sites": [
+    {
+      "site_id": "publickey-home",
+      "name": "Publickey",
+      "url": "https://www.publickey1.jp/",
+      "tags": ["developer", "jp", "news"],
+      "notes": "Historical cohort developer publication reintroduced because its article-list navigation lacks a recorded final audit."
+    },
+    {
+      "site_id": "qiita-home",
+      "name": "Qiita Home",
+      "url": "https://qiita.com/",
+      "tags": ["developer", "jp", "interactive"],
+      "notes": "Historical cohort developer portal reintroduced because its navigation-heavy dynamic homepage lacks a recorded final audit."
+    },
+    {
+      "site_id": "jalan-home",
+      "name": "Jalan.net",
+      "url": "https://www.jalan.net/",
+      "tags": ["travel", "jp", "service"],
+      "notes": "Previously curated travel portal whose destination search, campaigns, and booking controls still lack a recorded final audit."
+    },
+    {
+      "site_id": "egov-home",
+      "name": "e-Gov",
+      "url": "https://www.e-gov.go.jp/",
+      "tags": ["government", "jp", "service"],
+      "notes": "Historical cohort administrative portal reintroduced because its broad category navigation and interactions lack a recorded final audit."
+    },
+    {
+      "site_id": "mynavi-baito-home",
+      "name": "Mynavi Baito",
+      "url": "https://baito.mynavi.jp/",
+      "tags": ["jobs", "jp", "service"],
+      "notes": "Previously curated job portal whose region pickers, category hubs, and repeated listings still lack a recorded final audit."
+    },
+    {
+      "site_id": "mhlw-home",
+      "name": "MHLW",
+      "url": "https://www.mhlw.go.jp/",
+      "tags": ["government", "jp", "public"],
+      "notes": "Historical cohort ministry portal reintroduced because its repeated content blocks and navigation lack a recorded final audit."
+    },
+    {
+      "site_id": "yahoo-travel-home",
+      "name": "Yahoo! Travel",
+      "url": "https://travel.yahoo.co.jp/",
+      "tags": ["travel", "jp", "service"],
+      "notes": "Previously curated travel portal whose search forms, date controls, rankings, and promotions still lack a recorded final audit."
+    },
+    {
+      "site_id": "ikyu-home",
+      "name": "Ikyu.com",
+      "url": "https://www.ikyu.com/",
+      "tags": ["travel", "jp", "service"],
+      "notes": "Previously curated hotel portal whose search widgets, pricing modules, and dense promotions still lack a recorded final audit."
+    },
+    {
+      "site_id": "ndl-home",
+      "name": "National Diet Library",
+      "url": "https://www.ndl.go.jp/",
+      "tags": ["government", "jp", "knowledge"],
+      "notes": "Historical cohort library portal reintroduced because its large navigation surface lacks a recorded final audit."
+    },
+    {
+      "site_id": "ipa-home",
+      "name": "IPA",
+      "url": "https://www.ipa.go.jp/",
+      "tags": ["government", "jp", "developer"],
+      "notes": "Historical cohort software and security portal reintroduced because its article navigation lacks a recorded final audit."
+    },
+    {
+      "site_id": "zexy-home",
+      "name": "Zexy",
+      "url": "https://zexy.net/",
+      "tags": ["service", "jp", "lifestyle"],
+      "notes": "Previously curated wedding portal whose area navigation, category blocks, and booking UI still lack a recorded final audit."
+    },
+    {
+      "site_id": "zenn-home",
+      "name": "Zenn Home",
+      "url": "https://zenn.dev/",
+      "tags": ["developer", "jp", "interactive"],
+      "notes": "Historical cohort developer portal reintroduced because its card-heavy dynamic homepage lacks a recorded final audit."
+    },
+    {
+      "site_id": "yahoo-news-jp-home",
+      "name": "Yahoo! News Japan",
+      "url": "https://news.yahoo.co.jp/",
+      "tags": ["news", "jp", "service"],
+      "notes": "Historical cohort news portal reintroduced because its dynamic story and section coverage lacks a recorded final audit."
+    },
+    {
+      "site_id": "gnavi-home",
+      "name": "Gurunavi",
+      "url": "https://www.gnavi.co.jp/",
+      "tags": ["service", "jp", "lifestyle"],
+      "notes": "Previously curated dining portal whose area navigation, search UI, and recommendations still lack a recorded final audit."
+    },
+    {
+      "site_id": "epark-home",
+      "name": "EPARK",
+      "url": "https://epark.jp/",
+      "tags": ["service", "jp", "lifestyle"],
+      "notes": "Previously curated reservation portal whose category entries, location search, and repeated service modules still lack a recorded final audit."
+    },
+    {
+      "site_id": "env-home",
+      "name": "Ministry of the Environment",
+      "url": "https://www.env.go.jp/",
+      "tags": ["government", "jp", "public"],
+      "notes": "Historical cohort ministry portal reintroduced because its category navigation and interactive public guidance lack a recorded final audit."
+    },
+    {
+      "site_id": "mlit-home",
+      "name": "MLIT",
+      "url": "https://www.mlit.go.jp/",
+      "tags": ["government", "jp", "public"],
+      "notes": "Historical cohort infrastructure portal reintroduced because its dense link groups and public navigation lack a recorded final audit."
+    },
+    {
+      "site_id": "itmedia-news-home",
+      "name": "ITmedia NEWS",
+      "url": "https://www.itmedia.co.jp/news/",
+      "tags": ["news", "jp", "developer"],
+      "notes": "Historical cohort technology-news portal reintroduced because its repeated headlines and moderate dynamic navigation lack a recorded final audit."
+    },
+    {
+      "site_id": "rakuten-travel-home",
+      "name": "Rakuten Travel",
+      "url": "https://travel.rakuten.co.jp/",
+      "tags": ["travel", "jp", "service"],
+      "notes": "Previously curated travel portal whose date pickers, accommodation search, and repeated offers still lack a recorded final audit."
+    },
+    {
+      "site_id": "gihyo-home",
+      "name": "gihyo.jp",
+      "url": "https://gihyo.jp/",
+      "tags": ["developer", "jp", "docs"],
+      "notes": "Historical cohort developer publication reintroduced because its article and tutorial navigation lack a recorded final audit."
+    },
+    {
+      "site_id": "fsa-home",
+      "name": "Financial Services Agency",
+      "url": "https://www.fsa.go.jp/",
+      "tags": ["public", "jp", "government"],
+      "notes": "Previously audited financial regulator portal reintroduced because hidden tab and news branch differences remain after its timeout was fixed."
+    },
+    {
+      "site_id": "navitime-home",
+      "name": "NAVITIME",
+      "url": "https://www.navitime.co.jp/",
+      "tags": ["public", "jp", "transport"],
+      "notes": "Historically timed-out transport target reintroduced because its large same-origin app bundle and route/search UI still have a recorded minor gap."
+    },
+    {
+      "site_id": "jaxa-home",
+      "name": "JAXA",
+      "url": "https://www.jaxa.jp/",
+      "tags": ["public", "jp", "research"],
+      "notes": "Previously audited research portal reintroduced because its parser-blocking dependency chain improved but a large webpack bundle compatibility gap remains."
+    },
+    {
+      "site_id": "cao-home",
+      "name": "Cabinet Office",
+      "url": "https://www.cao.go.jp/",
+      "tags": ["public", "jp", "government"],
+      "notes": "Previously audited government portal reintroduced as a minor-gap benchmark for delayed navigation and notice ordering."
+    },
+    {
+      "site_id": "bbc-weather-home",
+      "name": "BBC Weather",
+      "url": "https://www.bbc.com/weather",
+      "tags": ["service", "en", "weather"],
+      "notes": "Weather portal with location search, forecast modules, and repeated regional cards."
+    },
+    {
+      "site_id": "weather-gov-home",
+      "name": "weather.gov",
+      "url": "https://www.weather.gov/",
+      "tags": ["service", "en", "weather"],
+      "notes": "Public weather site with search, alerts, maps, and repeated regional/service entry points."
+    },
+    {
+      "site_id": "webmd-home",
+      "name": "WebMD",
+      "url": "https://www.webmd.com/",
+      "tags": ["service", "en", "health"],
+      "notes": "Health information portal with search, navigation rails, and tool-oriented entry blocks."
+    },
+    {
+      "site_id": "allrecipes-home",
+      "name": "Allrecipes",
+      "url": "https://www.allrecipes.com/",
+      "tags": ["service", "en", "lifestyle"],
+      "notes": "Recipe discovery homepage with search, category rails, and recommendation-heavy sections."
+    },
+    {
+      "site_id": "eventbrite-home",
+      "name": "Eventbrite",
+      "url": "https://www.eventbrite.com/",
+      "tags": ["service", "en", "events"],
+      "notes": "Event discovery portal with search, location selectors, and repeated result cards."
+    },
+    {
+      "site_id": "mapquest-home",
+      "name": "MapQuest",
+      "url": "https://www.mapquest.com/",
+      "tags": ["service", "en", "maps"],
+      "notes": "Route and map portal with search inputs, directional controls, and local discovery entry points."
+    },
+    {
+      "site_id": "target-home",
+      "name": "Target",
+      "url": "https://www.target.com/",
+      "tags": ["shopping", "en", "service"],
+      "notes": "Retail surface with search, category navigation, and dynamic merchandising sections."
+    },
+    {
+      "site_id": "walmart-home",
+      "name": "Walmart",
+      "url": "https://www.walmart.com/",
+      "tags": ["shopping", "en", "service"],
+      "notes": "Large retail portal with search, pickup/location UI, and repeated card-based modules."
+    },
+    {
+      "site_id": "zillow-home",
+      "name": "Zillow",
+      "url": "https://www.zillow.com/",
+      "tags": ["service", "en", "real-estate"],
+      "notes": "Real-estate portal with search entry points, market modules, and repeated listing/navigation groups."
+    },
+    {
+      "site_id": "ikea-us-home",
+      "name": "IKEA US",
+      "url": "https://www.ikea.com/us/en/",
+      "tags": ["shopping", "en", "service"],
+      "notes": "Retail homepage with category navigation, search UI, and dense merchandising blocks."
+    },
+    {
+      "site_id": "walgreens-home",
+      "name": "Walgreens",
+      "url": "https://www.walgreens.com/",
+      "tags": ["shopping", "en", "health"],
+      "notes": "Retail-health portal with search, refill and service entry points, and navigation clusters."
+    },
+    {
+      "site_id": "costco-home",
+      "name": "Costco",
+      "url": "https://www.costco.com/",
+      "tags": ["shopping", "en", "service"],
+      "notes": "Wholesale retail surface with search, category rails, and repeated merchandising sections."
+    },
+    {
+      "site_id": "kayak-home",
+      "name": "KAYAK",
+      "url": "https://www.kayak.com/",
+      "tags": ["travel", "en", "service"],
+      "notes": "Travel metasearch page with tabbed search flows and locale-sensitive modules."
+    },
+    {
+      "site_id": "skyscanner-home",
+      "name": "Skyscanner",
+      "url": "https://www.skyscanner.com/",
+      "tags": ["travel", "en", "service"],
+      "notes": "Travel discovery and flight search surface with search widgets and repeated promo cards."
+    },
+    {
+      "site_id": "trivago-home",
+      "name": "trivago",
+      "url": "https://www.trivago.com/",
+      "tags": ["travel", "en", "service"],
+      "notes": "Hotel comparison portal with search, destination modules, and repeated price/promotional content."
+    },
+    {
+      "site_id": "rightmove-home",
+      "name": "Rightmove",
+      "url": "https://www.rightmove.co.uk/",
+      "tags": ["service", "en", "real-estate"],
+      "notes": "UK real-estate portal with search controls, region discovery, and listing-oriented modules."
+    },
+    {
+      "site_id": "ticketmaster-home",
+      "name": "Ticketmaster",
+      "url": "https://www.ticketmaster.com/",
+      "tags": ["service", "en", "events"],
+      "notes": "Ticketing portal with search, navigation clusters, and card-heavy event modules."
+    },
+    {
+      "site_id": "metoffice-home",
+      "name": "Met Office",
+      "url": "https://www.metoffice.gov.uk/",
+      "tags": ["service", "en", "weather"],
+      "notes": "Weather and climate portal with search, maps, alerts, and repeated forecast sections."
+    },
+    {
+      "site_id": "accuweather-home",
+      "name": "AccuWeather",
+      "url": "https://www.accuweather.com/",
+      "tags": ["service", "en", "weather"],
+      "notes": "Forecast site with repeated regional modules and a useful browser-render benchmark, though raw fetch can intermittently 403."
+    },
+    {
+      "site_id": "weathercom-home",
+      "name": "The Weather Channel",
+      "url": "https://weather.com/",
+      "tags": ["service", "en", "weather"],
+      "notes": "Heavy but still useful weather portal that currently stresses timeout and large-hydration handling."
+    }
+  ]
+}

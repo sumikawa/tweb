@@ -1,0 +1,14 @@
+.layout {
+  display: block;
+}
+
+.sidebar p {
+  font-weight: bold;
+}
+
+@media screen and (min-width: 481px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 160px;
+  }
+}

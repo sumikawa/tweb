@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tweb"
+version = "0.1.0"
+description = "Text-based browser foundation with normal and DOM views"
+requires-python = ">=3.9"
+dependencies = ["diskcache>=5.6,<6", "quickjs>=1.19,<2", "requests>=2.32,<3", "textual>=8.2,<9"]
+
+[project.scripts]
+tw = "tweb.cli:main"
+
+[tool.setuptools]
+packages = ["tweb", "tweb.renderers"]
+
+[tool.setuptools.package-data]
+tweb = ["data/*.html", "data/*.json"]

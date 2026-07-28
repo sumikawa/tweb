@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Form POST Demo</title>
+  </head>
+  <body>
+    <form action="https://example.com/submit" method="post">
+      <label for="q">Query</label>
+      <input type="text" id="q" name="q" value="hello">
+
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes">memo</textarea>
+
+      <label for="category">Category</label>
+      <select id="category" name="category">
+        <option value="articles" selected>Articles</option>
+        <option value="images">Images</option>
+      </select>
+
+      <input type="radio" id="scope-title" name="scope" value="title" checked>
+      <label for="scope-title">Title only</label>
+      <input type="radio" id="scope-all" name="scope" value="all">
+      <label for="scope-all">All text</label>
+
+      <input type="checkbox" id="safe" name="safe" checked>
+      <label for="safe">Safe search</label>
+
+      <button type="submit" name="go" value="1">Search</button>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+tweb.egg-info/
+uv.lock
+/wt-codex/
+__pycache__
+debug.log
+build
