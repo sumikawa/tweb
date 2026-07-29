@@ -398,7 +398,7 @@ if submission is not None:
 
 ### JavaScript button click
 
-`type="button"` のような JS 駆動 button は `click_button_control()` で扱う。
+`type="button"` のような JS 駆動 button は `click_button_control()` で扱う。低レベル API の既定 policy は保守的に `dom-only` のままにしてあり、TUI の既定値 `network` とは分けている。
 
 ```python
 result = actions.click_button_control("login-button", policy="dom-only")
@@ -411,7 +411,7 @@ print(result.clicked, result.classification, result.dom_changed)
 - `"dom-only"`: DOM 更新だけ許容し、通信や遷移は block
 - `"network"`: 通信や遷移も許容
 
-`invoke(action="click_button", ...)` で `dom-only` により network / navigation が止められた場合は、`status="blocked"` と `reason="blocked_by_policy"` を返しつつ、`button_click.classification` で `navigation_requested` や `network_requested` を確認できる。
+`invoke(action="click_button", ...)` では、`dom-only` により navigation が止められた場合は `status="blocked"` と `reason="blocked_by_policy"` を返す。network request だけが止められても click と DOM 更新が成立していれば `status="ok"` のままにし、`button_click.blocked_by_policy` と `button_click.classification` で `network_requested` を確認できる。
 
 戻り値 `ButtonClickResult` では次のような情報を見られる。
 

@@ -206,7 +206,7 @@
 - `snapshot` / `debug_control()` / `agent_actions().invoke()` を read / preflight / mutate の 3 層として `API.md` / `DOM.md` で明文化した
 - `AgentActionResult` に `status` / `reason` / `available_actions` / `requires_confirmation` を追加し、not-found / unsupported / blocked / requires-confirmation を例外ではなく構造化結果で返せるようにした
 - password input への値注入は mutate API 上で既定拒否とし、`confirmed=True` を付けた明示再実行に分離した
-- button click policy の block を `blocked_by_policy` だけでなく `status="blocked"` / `reason="blocked_by_policy"` として mutation API 上でも表現できるようにした
+- button click policy の block を `blocked_by_policy` だけでなく mutation API 上でも表現できるようにし、interaction 自体を止めたケースだけ `status="blocked"` / `reason="blocked_by_policy"` に寄せるようにした
 
 完了条件:
 

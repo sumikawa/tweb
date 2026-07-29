@@ -90,6 +90,14 @@ class ButtonClickResult:
       return "javascript_required"
     return "unsupported"
 
+  @property
+  def interaction_blocked(self) -> bool:
+    if not self.blocked_by_policy:
+      return False
+    if self.navigation_target is not None:
+      return True
+    return not self.clicked
+
 
 @dataclass(frozen=True)
 class ControlSubmissionPreview:

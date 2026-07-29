@@ -1752,7 +1752,7 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       button_span = app.current_page.buffer.control_spans[-1]
       app.cursor_index = button_span.start
       app._sync_cursor()
-      self.assertIn("click Log in (JS button, policy dom-only)", str(app.query_one("#status", Static).content))
+      self.assertIn("click Log in (JS button, policy network)", str(app.query_one("#status", Static).content))
       self.assertIn("Signed out", app.current_page.rendered)
 
       await pilot.press("enter")
@@ -1763,7 +1763,7 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       self.assertIn("button updated DOM", str(app.query_one("#status", Static).content))
 
   async def test_button_click_reports_blocked_navigation_request(self) -> None:
-    app = TwebBrowserApp(str(BUTTON_CLICK_NAVIGATION), width=80)
+    app = TwebBrowserApp(str(BUTTON_CLICK_NAVIGATION), width=80, button_click_policy="dom-only")
 
     async with app.run_test(size=(80, 20)) as pilot:
       await pilot.pause()
@@ -1781,6 +1781,45 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
         str(app.query_one("#status", Static).content),
       )
       self.assertIn("blocked by dom-only policy", str(app.query_one("#status", Static).content))
+
+  async def test_button_click_reports_dom_update_when_network_is_blocked_by_policy(self) -> None:
+    source = Resource(
+      source="https://example.com/account",
+      content="""
+      <html>
+        <body>
+          <h1>Button Fetch</h1>
+          <p id="status">Idle</p>
+          <input id="button_accept" type="button" value="Load profile">
+          <script>
+            document.getElementById("button_accept").addEventListener("click", (event) => {
+              event.preventDefault();
+              document.getElementById("status").textContent = "Submitting";
+              var xhr = new XMLHttpRequest();
+              xhr.open("GET", "/api/profile");
+              xhr.send();
+            });
+          </script>
+        </body>
+      </html>
+      """,
+    )
+    app = TwebBrowserApp(source.source, width=80, button_click_policy="dom-only")
+
+    with patch("tweb.tui.fetch_resource", return_value=source):
+      async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        button_span = app.current_page.buffer.control_spans[-1]
+        app.cursor_index = button_span.start
+        app._sync_cursor()
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        self.assertEqual(app.current_page.resource.source, source.source)
+        self.assertIn("Submitting", app.current_page.rendered)
+        self.assertIn("button updated DOM", str(app.query_one("#status", Static).content))
+        self.assertIn("skipped network GET https://example.com/api/profile under dom-only policy", str(app.query_one("#status", Static).content))
 
   async def test_tab_like_button_navigation_loads_target_page(self) -> None:
     source = Resource(
@@ -3190,7 +3229,7 @@ class TuiCliWidthTest(unittest.TestCase):
       scripts=None,
       session=None,
       browser_render_policy="never",
-      button_click_policy="dom-only",
+      button_click_policy="network",
       use_script_cache=True,
       debug_block_colors=False,
       history_path=Path("~/.config/tw/history.json").expanduser(),

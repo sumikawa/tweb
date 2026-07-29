@@ -101,7 +101,7 @@
 - [x] HTML の submit semantics と JS 駆動 button click を別経路で扱い、誤って submit に見なさない
 - [x] JS 駆動 button click の結果は `dom_updated` / `navigation_requested` / `network_requested` / `javascript_required` のように分類して可視化する
 - [x] `dom-only` 許可では `onclick` による DOM 更新までに留め、fetch / XHR / `location` 変更は別許可に分離する
-- [x] AI 向け `agent_actions().invoke()` では policy block を `status="blocked"` / `reason="blocked_by_policy"` として構造化して返す
+- [x] AI 向け `agent_actions().invoke()` では、interaction 自体が policy で止まったケースを `status="blocked"` / `reason="blocked_by_policy"` として構造化して返し、network だけ止めつつ DOM 更新が成立したケースは別扱いにする
 - [ ] reCAPTCHA や外部認証のような高権限フローは通常の form submit と同列に自動化しない
 
 ### 10. ダウンロードと外部アプリ連携

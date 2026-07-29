@@ -3802,6 +3802,44 @@ class DocumentApiTest(unittest.TestCase):
     self.assertEqual(result.button_click["classification"], "navigation_requested")
     self.assertTrue(result.button_click["blocked_by_policy"])
 
+  def test_agent_actions_invoke_keeps_blocked_network_button_as_successful_click(self) -> None:
+    document = TWebDocument(
+      parse_document(
+        Resource(
+          source="https://example.com/account",
+          content="""
+          <html>
+            <body>
+              <p id="status">Idle</p>
+              <input id="button_accept" type="button" value="Accept">
+              <script>
+                document.getElementById("button_accept").addEventListener("click", (event) => {
+                  event.preventDefault();
+                  document.getElementById("status").textContent = "Submitting";
+                  var xhr = new XMLHttpRequest();
+                  xhr.open("POST", "/wi2auth/xhr/login");
+                  xhr.send("");
+                });
+              </script>
+            </body>
+          </html>
+          """,
+        )
+      )
+    )
+    document.execute_embedded_scripts(ignore_errors=False)
+
+    button = next(control for control in document.form_controls() if control.control_id == "button_accept")
+    result = document.agent_actions().invoke(
+      AgentActionRequest(action="click_button", control_id=button.control_id, policy="dom-only")
+    )
+
+    self.assertEqual(result.status, "ok")
+    self.assertIsNone(result.reason)
+    self.assertTrue(result.changed)
+    self.assertEqual(result.button_click["classification"], "network_requested")
+    self.assertTrue(result.button_click["blocked_by_policy"])
+
   @patch("tweb.js_runtime.requests.request")
   def test_click_button_control_allows_network_policy_and_reports_request(self, mock_request: Mock) -> None:
     response = Mock()

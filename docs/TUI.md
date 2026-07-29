@@ -31,7 +31,7 @@ TUI モードの操作仕様と表示方針をまとめる。
 - `checkbox + label` ベースのメニューや dropdown は `Enter` で開閉できる
 - 最小 form 対応として、text input / textarea はポップアップ編集、password input はマスク付きの単一行ポップアップ編集、select は切り替え、radio / checkbox は選択、submit button は GET/POST submit を扱える
 - `type="button"` の button は submit しない。TUI から click を実行し、`onclick` や `addEventListener("click", ...)` の結果を `dom_updated` / `navigation_requested` / `network_requested` / `javascript_required` に分類して表示する
-- `--button-click-policy off|dom-only|network` で JS 駆動 button の許可範囲を切り替える。`dom-only` では DOM 更新だけを許し、fetch / XHR / `location` 変更は block して結果だけ可視化する
+- `--button-click-policy off|dom-only|network` で JS 駆動 button の許可範囲を切り替える。TUI の既定値は `network` で、通常の対話ブラウズでは通信や遷移も許可する。`dom-only` では DOM 更新だけを許し、fetch / XHR / `location` 変更は block して結果だけ可視化する
 - `--debug-block-colors` を付けると、検出した render block ごとに背景色を変えて block の範囲を追いやすくし、pane 末尾の表示空白まで同じ背景色で塗る
 - この policy が必要なのは、submit は送信先 URL と method を事前に計算できる一方、JS 駆動 button は DOM 更新だけで終わる場合もあれば、裏で fetch / XHR / `location` 変更を起こす場合もあり、同じ `Enter` でも副作用の強さが一定でないためである
 - 編集中はポップアップが開き、本文タイトルも `Editing: ...` に切り替わる

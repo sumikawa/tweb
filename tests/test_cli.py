@@ -455,7 +455,7 @@ class CliTest(unittest.TestCase):
       scripts=[],
       session=None,
       browser_render_policy="auto",
-      button_click_policy="dom-only",
+      button_click_policy="network",
       use_script_cache=True,
       debug_block_colors=False,
     )

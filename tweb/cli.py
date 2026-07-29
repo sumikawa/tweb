@@ -323,8 +323,8 @@ def _add_button_click_policy_argument(parser: argparse.ArgumentParser) -> None:
   parser.add_argument(
     "--button-click-policy",
     choices=("off", "dom-only", "network"),
-    default="dom-only",
-    help="How TUI treats JavaScript-driven type=button clicks: block them, allow DOM-only updates while blocking fetch/XHR/location changes, or allow network/navigation requests",
+    default="network",
+    help="How TUI treats JavaScript-driven type=button clicks: block them, allow DOM-only updates while blocking fetch/XHR/location changes, or allow network/navigation requests (default: network)",
   )
 
 def _resolve_width(width: int | None) -> int:

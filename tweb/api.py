@@ -1341,9 +1341,9 @@ class TWebDocument:
       return AgentActionResult(
         action=action,
         control_id=control_id,
-        status="blocked" if result.blocked_by_policy else "ok",
+        status="blocked" if result.interaction_blocked else "ok",
         changed=result.dom_changed,
-        reason="blocked_by_policy" if result.blocked_by_policy else None,
+        reason="blocked_by_policy" if result.interaction_blocked else None,
         available_actions=supported_actions,
         button_click={
           "clicked": result.clicked,

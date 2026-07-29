@@ -1112,7 +1112,7 @@ class TwebBrowserApp(App[None]):
     scripts: list[str] | None = None,
     session: requests.Session | None = None,
     browser_render_policy: str = "never",
-    button_click_policy: ButtonClickPolicy = "dom-only",
+    button_click_policy: ButtonClickPolicy = "network",
     use_script_cache: bool = True,
     debug_block_colors: bool = False,
     history_path: Path | None = None,
@@ -2477,7 +2477,9 @@ class TwebBrowserApp(App[None]):
       request = result.network_requests[-1]
       suffix = f"button requested network {request.method} {request.url}"
       if request.blocked:
-        return f"{suffix} (blocked by {result.policy} policy)"
+        if result.dom_changed:
+          return f"button updated DOM; skipped network {request.method} {request.url} under {result.policy} policy"
+        return f"{suffix} (not sent under {result.policy} policy)"
       if result.dom_changed:
         return f"{suffix} and updated DOM"
       return suffix
@@ -3300,7 +3302,7 @@ def run_tui_browser(
   scripts: list[str] | None = None,
   session: requests.Session | None = None,
   browser_render_policy: str = "never",
-  button_click_policy: ButtonClickPolicy = "dom-only",
+  button_click_policy: ButtonClickPolicy = "network",
   use_script_cache: bool = True,
   debug_block_colors: bool = False,
 ) -> int:
