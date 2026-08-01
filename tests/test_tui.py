@@ -1657,7 +1657,7 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       </html>
       """,
     )
-    app = TwebBrowserApp(source.source, width=80)
+    app = TwebBrowserApp(source.source, width=80, button_click_policy="dom-only")
 
     with patch("tweb.tui.fetch_resource", return_value=source):
       async with app.run_test(size=(80, 20)) as pilot:

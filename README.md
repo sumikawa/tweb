@@ -46,6 +46,7 @@ tw ./page.html
 
 ```bash
 tw https://example.com --mode text
+tw https://example.com/article --mode text --main-only
 ```
 
 DOM 表示:
@@ -61,6 +62,7 @@ tw https://example.com --mode dom-ai
 ```
 
 `--width` を省略した場合は現在のターミナル幅を使い、取得できない場合は `80` を使います。`--link-style` の既定値は `none` です。
+`--main-only` を付けると `text` モードでは `<main>` を優先し、なければ `<article>` だけを描画します。
 
 ## よく使うオプション
 

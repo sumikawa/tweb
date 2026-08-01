@@ -124,6 +124,70 @@ class CliTest(unittest.TestCase):
     self.assertNotIn("https://example.com/docs", result.stdout)
     self.assertNotIn("\n\nLinks\n\n", result.stdout)
 
+  def test_main_only_renders_main_subtree_in_text_mode(self) -> None:
+    with TemporaryDirectory() as temp_dir:
+      page = Path(temp_dir) / "page.html"
+      page.write_text(
+        """
+        <html>
+          <head>
+            <title>Main only sample</title>
+          </head>
+          <body>
+            <header>Site header</header>
+            <main>
+              <h1>Main title</h1>
+              <p>Main body</p>
+            </main>
+            <footer>Site footer</footer>
+          </body>
+        </html>
+        """,
+        encoding="utf-8",
+      )
+
+      result = self.run_cli(str(page), "--mode", "text", "--main-only")
+
+    self.assertEqual(result.returncode, 0)
+    self.assertIn("Main only sample", result.stdout)
+    self.assertIn("Main title", result.stdout)
+    self.assertIn("Main body", result.stdout)
+    self.assertNotIn("Site header", result.stdout)
+    self.assertNotIn("Site footer", result.stdout)
+
+  def test_main_only_falls_back_to_article_when_main_is_missing(self) -> None:
+    with TemporaryDirectory() as temp_dir:
+      page = Path(temp_dir) / "page.html"
+      page.write_text(
+        """
+        <html>
+          <body>
+            <nav>Site nav</nav>
+            <article>
+              <h1>Article title</h1>
+              <p>Article body</p>
+            </article>
+            <aside>Related links</aside>
+          </body>
+        </html>
+        """,
+        encoding="utf-8",
+      )
+
+      result = self.run_cli(str(page), "--mode", "text", "--main-only")
+
+    self.assertEqual(result.returncode, 0)
+    self.assertIn("Article title", result.stdout)
+    self.assertIn("Article body", result.stdout)
+    self.assertNotIn("Site nav", result.stdout)
+    self.assertNotIn("Related links", result.stdout)
+
+  def test_main_only_is_rejected_outside_text_mode(self) -> None:
+    result = self.run_cli(str(SAMPLE), "--mode", "dom", "--main-only")
+
+    self.assertEqual(result.returncode, 2)
+    self.assertIn("--main-only is only supported with --mode text", result.stderr)
+
   def test_footnote_link_style_is_rejected(self) -> None:
     result = self.run_cli(str(SAMPLE), "--link-style", "footnote")
     self.assertNotEqual(result.returncode, 0)
@@ -460,9 +524,15 @@ class CliTest(unittest.TestCase):
       debug_block_colors=False,
     )
 
+  @patch("tweb.cli.render_normal", return_value="rendered")
   @patch("tweb.cli.TWebDocument")
   @patch("tweb.cli.fetch_resource")
-  def test_browser_render_policy_is_passed_to_document(self, mock_fetch_resource: Mock, mock_document_cls: Mock) -> None:
+  def test_browser_render_policy_is_passed_to_document(
+    self,
+    mock_fetch_resource: Mock,
+    mock_document_cls: Mock,
+    _mock_render_normal: Mock,
+  ) -> None:
     mock_fetch_resource.return_value = type("Resource", (), {"source": str(SAMPLE), "content": SAMPLE.read_text()})()
     document = mock_document_cls.return_value
 
@@ -498,9 +568,15 @@ class CliTest(unittest.TestCase):
     self.assertEqual(result, 0)
     self.assertEqual(mock_run_tui_browser.call_args.kwargs["button_click_policy"], "network")
 
+  @patch("tweb.cli.render_normal", return_value="rendered")
   @patch("tweb.cli.TWebDocument")
   @patch("tweb.cli.fetch_resource")
-  def test_no_script_cache_is_passed_to_document(self, mock_fetch_resource: Mock, mock_document_cls: Mock) -> None:
+  def test_no_script_cache_is_passed_to_document(
+    self,
+    mock_fetch_resource: Mock,
+    mock_document_cls: Mock,
+    _mock_render_normal: Mock,
+  ) -> None:
     mock_fetch_resource.return_value = type("Resource", (), {"source": str(SAMPLE), "content": SAMPLE.read_text()})()
     document = mock_document_cls.return_value
 

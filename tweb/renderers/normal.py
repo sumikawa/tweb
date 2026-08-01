@@ -307,6 +307,13 @@ def visible_links_from_render_result(
   return [(_visible_link_text(entry.text, entry.href), entry.href) for entry in result.link_spans]
 
 
+def find_main_content_root(document: DocumentNode) -> ElementNode | None:
+  body = document.body
+  if body is None:
+    return None
+  return body.find_first("main") or body.find_first("article") or body
+
+
 def render_normal_subtree(
   document: DocumentNode,
   root: ElementNode,
@@ -1056,15 +1063,18 @@ def _render_container(
     if text:
       inline_parts.append(text)
 
-  if overlay_links and inline_parts:
-    overlay_text = _annotate_overlay_link_text(
-      _join_inline_parts(inline_parts),
-      overlay_links,
-      state,
-    )
-    inline_parts.clear()
-    if overlay_text:
-      inline_parts.append(overlay_text)
+  if overlay_links:
+    if inline_parts:
+      overlay_text = _annotate_overlay_link_text(
+        _join_inline_parts(inline_parts),
+        overlay_links,
+        state,
+      )
+      inline_parts.clear()
+      if overlay_text:
+        inline_parts.append(overlay_text)
+    else:
+      blocks = _annotate_overlay_link_blocks(blocks, overlay_links, state)
 
   _flush_inline_parts(blocks, inline_parts, state)
   blocks = _inherit_block_alignment(blocks, text_align)
@@ -1841,6 +1851,30 @@ def _annotate_overlay_link_text(
   return annotated
 
 
+def _annotate_overlay_link_blocks(
+  blocks: list[RenderBlock],
+  overlay_links: list[tuple[str, str]],
+  state: RenderState,
+) -> list[RenderBlock]:
+  remaining = list(overlay_links)
+  annotated_blocks: list[RenderBlock] = []
+  for block in blocks:
+    if not remaining or not block.text:
+      annotated_blocks.append(block)
+      continue
+    updated_text = block.text
+    next_remaining: list[tuple[str, str]] = []
+    for label, href in remaining:
+      annotated = _annotate_overlay_link_text(updated_text, [(label, href)], state)
+      if annotated == updated_text:
+        next_remaining.append((label, href))
+        continue
+      updated_text = annotated
+    annotated_blocks.append(replace(block, text=updated_text))
+    remaining = next_remaining
+  return annotated_blocks
+
+
 def _label_target_control_metadata(
   state: RenderState,
   label_node: ElementNode,
@@ -2350,6 +2384,8 @@ def _can_inline_row_flex_child(
   *,
   inherited_visible: bool,
 ) -> bool:
+  if node.tag == "pre":
+    return False
   for descendant in node.iter_descendants():
     if not isinstance(descendant, ElementNode) or descendant.tag in SKIP_TAGS:
       continue

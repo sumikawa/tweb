@@ -3482,8 +3482,10 @@ def _current_region_line_context(buffer: RenderedBuffer, line_index: int, column
 
 def _sanitize_region_line_snippet(snippet: str) -> str:
   snippet = snippet.strip()
+  if snippet.startswith("|"):
+    snippet = snippet[1:].lstrip()
   if snippet.endswith("|"):
-    return snippet[:-1].rstrip()
+    snippet = snippet[:-1].rstrip()
   return snippet
 
 
@@ -4109,9 +4111,12 @@ def _build_grid_regions_for_line_range(
   if viable_candidates:
     _, separator_column = max(viable_candidates)
   else:
-    if len(separator_candidates) != 1:
-      return None
-    separator_column = next(iter(separator_candidates))
+    if start_line == end_line:
+      separator_column = max(separator_candidates)
+    else:
+      if len(separator_candidates) != 1:
+        return None
+      separator_column = next(iter(separator_candidates))
   separator_indexes = [
     (line_index, separator_indexes_by_line[offset][separator_column])
     for offset, line_index in enumerate(range(start_line, end_line + 1))

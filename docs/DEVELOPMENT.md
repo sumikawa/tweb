@@ -49,6 +49,7 @@ uv run python3 -m unittest tests.test_cli
 ```bash
 tw https://example.com --mode text
 tw ./page.html --mode text
+tw https://example.com/article --mode text --main-only
 ```
 
 DOM / DOM-AI:

@@ -27,7 +27,7 @@ from .fetcher import (
 from .js_runtime import JavaScriptRuntimeError
 from .parser import parse_document
 from .renderers.dom import render_dom
-from .renderers.normal import render_normal
+from .renderers.normal import find_main_content_root, render_normal, render_normal_subtree
 from .tui import run_tui_browser
 
 DEFAULT_TARGET = str(importlib.resources.files("tweb").joinpath("data", "welcome.html"))
@@ -69,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     choices=("inline", "none"),
     default="none",
     help="How to show links in text mode",
+  )
+  parser.add_argument(
+    "--main-only",
+    action="store_true",
+    help="In text mode, render only the main content subtree (`<main>` preferred, then `<article>`)",
   )
   parser.add_argument(
     "--max-depth",
@@ -154,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.exit(status=1, message=f"{CLI_ERROR_PREFIX} JavaScript error: {exc}\n")
 
     if args.mode in {"dom", "dom-ai"}:
+      if args.main_only:
+        parser.exit(status=2, message=f"{CLI_ERROR_PREFIX} --main-only is only supported with --mode text\n")
       if logger is not None:
         logger.debug("rendering dom variant=%s max_depth=%s", args.mode, args.max_depth)
       print(
@@ -169,15 +176,22 @@ def main(argv: list[str] | None = None) -> int:
       return 0
 
     if logger is not None:
-      logger.debug("rendering normal width=%d link_style=%s", width, args.link_style)
-    print(
-      render_normal(
-        document.document,
-        width=width,
-        link_style=args.link_style,
-        session=session,
+      logger.debug("rendering normal width=%d link_style=%s main_only=%s", width, args.link_style, args.main_only)
+    render_kwargs = {
+      "width": width,
+      "link_style": args.link_style,
+      "session": session,
+    }
+    if args.main_only:
+      root = find_main_content_root(document.document)
+      rendered = (
+        render_normal_subtree(document.document, root, **render_kwargs)
+        if root is not None
+        else render_normal(document.document, **render_kwargs)
       )
-    )
+    else:
+      rendered = render_normal(document.document, **render_kwargs)
+    print(rendered)
     return 0
   finally:
     if session is not None and args.mode != "tui":
@@ -192,6 +206,7 @@ def main_from_path(
   path: str | Path,
   mode: str = "text",
   link_style: str = "none",
+  main_only: bool = False,
 ) -> str:
   if mode == "tui":
     raise ValueError("main_from_path does not support tui mode")
@@ -200,11 +215,17 @@ def main_from_path(
   if mode == "normal":
     mode = "text"
   if mode in {"dom", "dom-ai"}:
+    if main_only:
+      raise ValueError("main_from_path main_only is only supported in text mode")
     return render_dom(
       document.document,
       variant="ai" if mode == "dom-ai" else "summary",
       viewport_columns=160,
     )
+  if main_only:
+    root = find_main_content_root(document.document)
+    if root is not None:
+      return render_normal_subtree(document.document, root, link_style=link_style)
   return render_normal(document.document, link_style=link_style)
 
 

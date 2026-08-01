@@ -15,6 +15,7 @@ from tweb.renderers.normal import (
   _display_width,
   collect_two_pane_targets,
   collect_visible_links,
+  find_main_content_root,
   render_normal,
   render_normal_subtree_with_metadata,
   render_normal_with_metadata,
@@ -230,6 +231,53 @@ class NormalRendererTest(unittest.TestCase):
       links = collect_visible_links(parse_document(resource), width=80)
 
     self.assertEqual(links, [("Docs", "/docs")])
+
+  def test_find_main_content_root_prefers_main_then_article_then_body(self) -> None:
+    with_main = parse_document(Resource(
+      source="inline",
+      content="""
+      <html>
+        <body>
+          <article>Article body</article>
+          <main>Main body</main>
+        </body>
+      </html>
+      """,
+    ))
+    main_root = find_main_content_root(with_main)
+    self.assertIsNotNone(main_root)
+    assert main_root is not None
+    self.assertEqual(main_root.tag, "main")
+
+    with_article = parse_document(Resource(
+      source="inline",
+      content="""
+      <html>
+        <body>
+          <article>Article body</article>
+        </body>
+      </html>
+      """,
+    ))
+    article_root = find_main_content_root(with_article)
+    self.assertIsNotNone(article_root)
+    assert article_root is not None
+    self.assertEqual(article_root.tag, "article")
+
+    with_body_only = parse_document(Resource(
+      source="inline",
+      content="""
+      <html>
+        <body>
+          <div>Body text</div>
+        </body>
+      </html>
+      """,
+    ))
+    body_root = find_main_content_root(with_body_only)
+    self.assertIsNotNone(body_root)
+    assert body_root is not None
+    self.assertEqual(body_root.tag, "body")
 
   def test_render_normal_subtree_with_metadata_can_skip_control_metadata(self) -> None:
     resource = Resource(
