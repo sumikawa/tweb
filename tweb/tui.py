@@ -32,6 +32,7 @@ from .js_runtime import JavaScriptRuntimeError
 from .parser import parse_document
 from .renderers.dom import render_dom
 from .renderers.normal import (
+  ANSI_ESCAPE_RE,
   PaneTarget,
   RenderedControlMetadata,
   RenderedLinkMetadata,
@@ -1401,9 +1402,12 @@ class TwebBrowserApp(App[None]):
     if self.current_page is None or self._is_loading() or self.editing_control_id is not None:
       return
     try:
+      # Rendering normally stays plain in the TUI, but keep terminal styling
+      # escapes out of the clipboard if a future rendering path adds them.
+      clipboard_text = ANSI_ESCAPE_RE.sub("", self.current_page.rendered)
       subprocess.run(
         ["pbcopy"],
-        input=self.current_page.rendered,
+        input=clipboard_text,
         text=True,
         check=True,
       )
@@ -2616,7 +2620,9 @@ class TwebBrowserApp(App[None]):
       self._set_status(f"{self.query_one('#status', Static).content} | save path is empty")
       return
     target = Path(target_text).expanduser()
-    content = self.current_page.rendered
+    # Keep saved text as portable as copied text when a rendering path has
+    # terminal styling enabled.
+    content = ANSI_ESCAPE_RE.sub("", self.current_page.rendered)
     if content and not content.endswith("\n"):
       content = f"{content}\n"
     try:

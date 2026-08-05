@@ -2464,6 +2464,27 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
 
       self.assertEqual(target.read_text(encoding="utf-8"), app.current_page.rendered + "\n")
 
+  async def test_s_removes_terminal_escapes_before_saving(self) -> None:
+    app = TwebBrowserApp(str(TUI_ROOT), width=80)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+      target = Path(tmpdir) / "plain-page.txt"
+
+      async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        app.current_page = replace(
+          app.current_page,
+          rendered="# \x1b[1mStyled heading\x1b[22m",
+        )
+        await pilot.press("s")
+        await pilot.pause()
+        save_input = app.screen.query_one("#save-page-input", Input)
+        save_input.value = str(target)
+        await pilot.press("enter")
+        await pilot.pause()
+
+      self.assertEqual(target.read_text(encoding="utf-8"), "# Styled heading\n")
+
   async def test_s_saves_only_focused_pane_after_v(self) -> None:
     app = TwebBrowserApp(str(CSS_EXTERNAL_GRID), width=40)
 
@@ -2504,6 +2525,26 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       mock_run.assert_called_once_with(
         ["pbcopy"],
         input=app.current_page.rendered,
+        text=True,
+        check=True,
+      )
+
+  async def test_c_removes_terminal_escapes_before_copying(self) -> None:
+    app = TwebBrowserApp(str(TUI_ROOT), width=80)
+
+    with patch("tweb.tui.subprocess.run") as mock_run:
+      async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        app.current_page = replace(
+          app.current_page,
+          rendered="# \x1b[1mStyled heading\x1b[22m",
+        )
+        await pilot.press("c")
+        await pilot.pause()
+
+      mock_run.assert_called_once_with(
+        ["pbcopy"],
+        input="# Styled heading",
         text=True,
         check=True,
       )

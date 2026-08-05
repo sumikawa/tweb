@@ -12,7 +12,6 @@ from unittest.mock import Mock, patch
 from tweb.cookies import build_cookie_jar
 from tweb.cli import DEBUG_LOG_PATH, DEFAULT_TARGET, _resolve_width, main, tw_main
 from tweb.fetcher import DEFAULT_HEADERS, reset_default_headers
-from tweb.renderers.normal import ANSI_BOLD, ANSI_BOLD_RESET
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "tests" / "fixtures" / "sample.html"
@@ -58,7 +57,8 @@ class CliTest(unittest.TestCase):
     result = self.run_cli(str(SAMPLE), "--mode", "text")
     self.assertEqual(result.returncode, 0)
     self.assertIn("tweb sample", result.stdout)
-    self.assertIn(f"# {ANSI_BOLD}Welcome to tweb{ANSI_BOLD_RESET}", result.stdout)
+    self.assertIn("# Welcome to tweb", result.stdout)
+    self.assertNotIn("\x1b", result.stdout)
     self.assertIn("the documentation", result.stdout)
     self.assertNotIn("[1]", result.stdout)
     self.assertNotIn("https://example.com/docs", result.stdout)
@@ -68,7 +68,8 @@ class CliTest(unittest.TestCase):
     self.assertEqual(result.returncode, 0)
     self.assertEqual(Path(DEFAULT_TARGET).name, "welcome.html")
     self.assertIn("tweb welcome", result.stdout)
-    self.assertIn(f"# {ANSI_BOLD}Welcome to tweb{ANSI_BOLD_RESET}", result.stdout)
+    self.assertIn("# Welcome to tweb", result.stdout)
+    self.assertNotIn("\x1b", result.stdout)
 
   def test_main_file_mode(self) -> None:
     result = self.run_main_file(str(SAMPLE), "--mode", "text")
@@ -247,12 +248,14 @@ class CliTest(unittest.TestCase):
       "document.querySelector('#title').textContent = 'CLI Inline Title';",
     )
     self.assertEqual(result.returncode, 0)
-    self.assertIn(f"# {ANSI_BOLD}CLI Inline Title{ANSI_BOLD_RESET}", result.stdout)
+    self.assertIn("# CLI Inline Title", result.stdout)
+    self.assertNotIn("\x1b", result.stdout)
 
   def test_runs_script_file_before_rendering(self) -> None:
     result = self.run_cli(str(JS_DOM), "--mode", "text", "--script-file", str(UPDATE_TITLE))
     self.assertEqual(result.returncode, 0)
-    self.assertIn(f"# {ANSI_BOLD}CLI Updated Title{ANSI_BOLD_RESET}", result.stdout)
+    self.assertIn("# CLI Updated Title", result.stdout)
+    self.assertNotIn("\x1b", result.stdout)
     self.assertIn("CLI Updated Body", result.stdout)
 
   @patch("tweb.cli.fetch_resource")

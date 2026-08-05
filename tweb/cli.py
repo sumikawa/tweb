@@ -180,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     render_kwargs = {
       "width": width,
       "link_style": args.link_style,
+      # Text mode is also used for pipes, files, and programmatic consumers.
+      # Keep its output plain; the TUI applies presentation styles itself.
+      "text_styles": False,
       "session": session,
     }
     if args.main_only:
@@ -225,8 +228,13 @@ def main_from_path(
   if main_only:
     root = find_main_content_root(document.document)
     if root is not None:
-      return render_normal_subtree(document.document, root, link_style=link_style)
-  return render_normal(document.document, link_style=link_style)
+      return render_normal_subtree(
+        document.document,
+        root,
+        link_style=link_style,
+        text_styles=False,
+      )
+  return render_normal(document.document, link_style=link_style, text_styles=False)
 
 
 def _load_scripts(
