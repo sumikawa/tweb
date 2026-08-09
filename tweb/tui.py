@@ -2960,14 +2960,20 @@ class TwebBrowserApp(App[None]):
         ]
         display_link_metadata = subtree_result.link_spans
         display_control_metadata = subtree_result.control_spans
-    buffer = _build_render_buffer(
-      display_rendered,
-      display_links,
-      controls,
-      interactive_keys,
-      link_metadata=display_link_metadata,
-      control_metadata=display_control_metadata,
-    )
+    # Initial full-page rendering is the common path.  Its display buffer is
+    # exactly the source buffer, so avoid rebuilding every position/span map.
+    # Keep a distinct buffer only when focusing a pane changes the rendered
+    # text and metadata.
+    buffer = source_buffer
+    if resolved_pane_focus_target_path is not None:
+      buffer = _build_render_buffer(
+        display_rendered,
+        display_links,
+        controls,
+        interactive_keys,
+        link_metadata=display_link_metadata,
+        control_metadata=display_control_metadata,
+      )
     if source_pane_groups and resolved_pane_focus_target_path is None:
       buffer = _merge_regions_by_pane_target(
         document.document,

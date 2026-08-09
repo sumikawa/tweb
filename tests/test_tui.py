@@ -870,6 +870,30 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
         page.rendered.index("Left rail"),
       )
 
+  async def test_build_browser_page_reuses_source_buffer_without_pane_focus(self) -> None:
+    app = TwebBrowserApp(str(TUI_ROOT), width=60)
+    resource = Resource(
+      source="https://example.com/article",
+      content="<html><body><main><h1>Article</h1><p>Body text.</p></main></body></html>",
+    )
+    document = TWebDocument(parse_document(resource))
+    rendered = "# Article\n\nBody text."
+
+    async with app.run_test(size=(60, 20)) as pilot:
+      await pilot.pause()
+      with patch("tweb.tui._build_render_buffer", wraps=_build_render_buffer) as build_buffer:
+        page = app._build_browser_page(
+          resource=resource,
+          document=document,
+          rendered=rendered,
+          links=[],
+          controls=[],
+          is_partial=False,
+        )
+
+    self.assertEqual(build_buffer.call_count, 1)
+    self.assertIs(page.buffer, page.source_buffer)
+
   async def test_title_marks_chrome_rendered_pages(self) -> None:
     app = TwebBrowserApp(str(TUI_ROOT), width=80)
 

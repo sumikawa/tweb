@@ -1987,10 +1987,10 @@ def _should_skip_expensive_page_events(
     and not (link_count >= 400 and control_count >= 20 and visible_len >= 1800)
   ):
     return False
-  if control_count >= 15:
-    return True
   if needs_post_dom_lifecycle:
     return False
+  if control_count >= 15:
+    return True
   return link_count >= 150 and visible_len >= 1800
 
 

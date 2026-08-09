@@ -5285,7 +5285,43 @@ class DocumentApiTest(unittest.TestCase):
     self.assertIn("page_event_dispatch", debug["timings_ms"])
     self.assertEqual(document.body.get("data-load"), "1")
 
-  def test_static_portal_dispatches_ready_without_load_event(self) -> None:
+  def test_link_dense_high_control_portal_keeps_load_events_when_runtime_requests_them(self) -> None:
+    links = "".join(
+      f'<a href="/item{i}">Item {i} with readable public information text</a>'
+      for i in range(170)
+    )
+    controls = "".join(f'<button type="button">Button {i}</button>' for i in range(24))
+    paragraphs = "".join(
+      f"<p>Paragraph {i} contains enough readable public-information text for static rendering.</p>"
+      for i in range(28)
+    )
+    document = TWebDocument(
+      parse_document(
+        Resource(
+          source="https://example.com/portal",
+          content=f"""
+          <html>
+            <body>
+              <main>{paragraphs}<nav>{links}</nav><section>{controls}</section></main>
+              <script>
+                window.addEventListener('load', () => {{
+                  document.body.setAttribute('data-load', '1');
+                }});
+              </script>
+            </body>
+          </html>
+          """,
+        )
+      )
+    )
+
+    document.execute_embedded_scripts(ignore_errors=False, browser_render_policy="never")
+
+    debug = document.javascript_debug()
+    self.assertIn("page_event_dispatch", debug["timings_ms"])
+    self.assertEqual(document.body.get("data-load"), "1")
+
+  def test_static_portal_dispatches_ready_and_load_when_listeners_present(self) -> None:
     links = "".join(f'<a href="/item{i}">Item {i}</a>' for i in range(180))
     controls = "".join(
       f'<button type="button">Button {i}</button>' for i in range(24)
@@ -5320,7 +5356,7 @@ class DocumentApiTest(unittest.TestCase):
     document.execute_embedded_scripts(ignore_errors=False, browser_render_policy="never")
 
     self.assertEqual(document.body.get("data-ready"), "1")
-    self.assertIsNone(document.body.get("data-load"))
+    self.assertEqual(document.body.get("data-load"), "1")
 
   def test_static_portal_dispatches_load_when_main_is_behind_load_gate(self) -> None:
     links = "".join(f'<a href="/item{i}">Item {i}</a>' for i in range(180))
