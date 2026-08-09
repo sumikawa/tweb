@@ -52,6 +52,8 @@ tw ./page.html --mode text
 tw https://example.com/article --mode text --main-only
 ```
 
+`--main-only` は `<main>`、`<article>` を優先し、semantic tag がないページでは本文らしい `div` / `section` を推定します。
+
 DOM / DOM-AI:
 
 ```bash

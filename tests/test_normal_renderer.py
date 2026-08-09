@@ -279,6 +279,29 @@ class NormalRendererTest(unittest.TestCase):
     assert body_root is not None
     self.assertEqual(body_root.tag, "body")
 
+    with_generic_content = parse_document(Resource(
+      source="inline",
+      content="""
+      <html>
+        <body>
+          <header>Site navigation and branding</header>
+          <div class="site-shell">
+            <div class="post-content">
+              <h1>Generic article heading</h1>
+              <p>First paragraph with enough prose to represent the article body.</p>
+              <p>Second paragraph keeps the candidate distinct from a short layout container.</p>
+            </div>
+          </div>
+          <footer>Site footer and links</footer>
+        </body>
+      </html>
+      """,
+    ))
+    generic_root = find_main_content_root(with_generic_content)
+    self.assertIsNotNone(generic_root)
+    assert generic_root is not None
+    self.assertEqual(generic_root.attrs.get("class"), "post-content")
+
   def test_render_normal_subtree_with_metadata_can_skip_control_metadata(self) -> None:
     resource = Resource(
       source="inline",

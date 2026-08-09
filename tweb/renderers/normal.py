@@ -311,7 +311,83 @@ def find_main_content_root(document: DocumentNode) -> ElementNode | None:
   body = document.body
   if body is None:
     return None
-  return body.find_first("main") or body.find_first("article") or body
+  semantic_root = body.find_first("main") or body.find_first("article")
+  if semantic_root is not None:
+    return semantic_root
+  return _find_probable_content_root(body) or body
+
+
+_CONTENT_CONTAINER_TAGS = {"div", "section"}
+_CONTENT_MARKERS = (
+  "article",
+  "body",
+  "content",
+  "entry",
+  "main",
+  "post",
+  "prose",
+  "story",
+  "text",
+)
+_CHROME_MARKERS = (
+  "author",
+  "breadcrumb",
+  "comment",
+  "footer",
+  "header",
+  "menu",
+  "meta",
+  "nav",
+  "related",
+  "search",
+  "share",
+  "sidebar",
+  "social",
+  "tag",
+  "toolbar",
+)
+
+
+def _find_probable_content_root(body: ElementNode) -> ElementNode | None:
+  candidates: list[tuple[float, ElementNode]] = []
+  for node in body.iter_descendants():
+    if not isinstance(node, ElementNode) or node.tag not in _CONTENT_CONTAINER_TAGS:
+      continue
+    score = _content_root_score(node)
+    if score is not None:
+      candidates.append((score, node))
+  if not candidates:
+    return None
+  return max(candidates, key=lambda item: item[0])[1]
+
+
+def _content_root_score(node: ElementNode) -> float | None:
+  text_length = len(" ".join(node.text_content().split()))
+  if text_length < 160:
+    return None
+  blocks = sum(
+    len(node.find_all(tag))
+    for tag in ("blockquote", "li", "p", "pre")
+  )
+  headings = sum(len(node.find_all(tag)) for tag in HEADING_TAGS)
+  if blocks < 2 and headings == 0:
+    return None
+
+  identity = " ".join(
+    value.casefold()
+    for value in (node.attrs.get("class", ""), node.attrs.get("id", ""), node.attrs.get("aria-label", ""))
+    if value
+  )
+  content_markers = sum(marker in identity for marker in _CONTENT_MARKERS)
+  chrome_markers = sum(marker in identity for marker in _CHROME_MARKERS)
+  links = len(node.find_all("a"))
+  score = min(text_length, 12_000) / 120
+  score += min(blocks, 80) * 4
+  score += min(headings, 12) * 8
+  score += content_markers * 35
+  score -= chrome_markers * 45
+  score -= min(links, 80) * 0.5
+  return score
 
 
 def render_normal_subtree(

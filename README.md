@@ -62,7 +62,7 @@ tw https://example.com --mode dom-ai
 ```
 
 `--width` を省略した場合は現在のターミナル幅を使い、取得できない場合は `80` を使います。`--link-style` の既定値は `none` です。
-`--main-only` を付けると `text` モードでは `<main>` を優先し、なければ `<article>` だけを描画します。
+`--main-only` を付けると `text` モードでは `<main>`、`<article>` を優先し、semantic tag がないページでは本文らしいコンテナを推定して描画します。候補が見つからない場合は `<body>` 全体に戻ります。
 
 ## よく使うオプション
 
