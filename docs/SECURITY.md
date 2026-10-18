@@ -109,7 +109,7 @@
 - [ ] ダウンロード機能を入れる場合は保存先を明示する
 - [ ] 取得したファイルを自動で実行・オープンしない
 - [ ] `mailto:`、外部アプリスキーム、OS 連携を入れる場合は確認付きにする
-- [ ] `op` CLI や 1Password のような外部 credential tool を呼ぶ場合は、対象 origin と取得対象 secret を表示してから明示実行する
+- [ ] 外部 credential tool との連携は未実装（Phase 13）。`op` CLI や 1Password などを呼ぶ機能を追加する際は、対象 origin と取得対象 secret を表示してから明示実行する
 - [ ] browser extension や secret manager API を将来使う場合でも、ページ JavaScript から直接届く経路は作らない
 
 ## 追加で必要な TODO

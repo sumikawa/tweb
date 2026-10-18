@@ -514,6 +514,34 @@ Line two</pre>
 
     self.assertEqual(groups, [])
 
+  def test_pane_gate_ignores_hidden_and_template_layouts_in_long_article(self) -> None:
+    document = parse_document(Resource(
+      source="https://example.com/article",
+      content="<body><article>" + "<p>Readable article paragraph.</p>" * 300 + "</article>"
+        + '<div hidden><div style="display:grid"><aside>Nav</aside><main>Hidden</main></div></div>'
+        + '<template><div class="layout"><aside>Nav</aside><main>Template</main></div></template></body>',
+    ))
+    with patch("tweb.renderers.normal.build_style_context", side_effect=AssertionError("unnecessary CSS")):
+      self.assertEqual(collect_two_pane_targets(document), [])
+
+  def test_static_rich_pane_gate_skips_layout_scan_and_css(self) -> None:
+    document = parse_document(Resource(
+      source="https://example.com/article",
+      content='<html><head><link rel="stylesheet" href="a.css"><link rel="stylesheet" href="b.css"></head>'
+        + '<body><main>' + '<p>Readable article paragraph.</p>' * 300
+        + '<a href="/item">Item</a>' * 400 + '</main></body></html>',
+    ))
+    with patch("tweb.renderers.normal._may_have_two_pane_targets", side_effect=AssertionError("unnecessary scan")), patch(
+      "tweb.renderers.normal.build_style_context", side_effect=AssertionError("unnecessary CSS"),
+    ):
+      self.assertEqual(collect_two_pane_targets(document), [])
+
+  def test_pane_gate_preserves_external_stylesheet_grid(self) -> None:
+    document = parse_document(fetch_resource(str(CSS_EXTERNAL_GRID)))
+    groups = collect_two_pane_targets(document, width=80)
+    self.assertTrue(groups)
+    self.assertNotEqual(groups[0][0].path, groups[0][1].path)
+
   def test_label_lookup_indexes_are_built_once_per_render_state(self) -> None:
     resource = Resource(
       source="inline",

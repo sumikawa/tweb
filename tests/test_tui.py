@@ -3291,6 +3291,73 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       self.assertEqual(app.cursor_index, rendered.index("Main heading"))
 
 
+class TuiPageAssemblyTest(unittest.TestCase):
+  def setUp(self) -> None:
+    self.app = TwebBrowserApp("unused", width=80)
+    self.resource = Resource(source="grid", content='<body><div style="display:grid;grid-template-columns:1fr 1fr">'
+      '<main><h2>Article</h2><p>Article body.</p><a href="/article">Article link</a></main>'
+      '<aside><p>Sidebar</p><a href="/side">Side link</a></aside></div></body>')
+    self.document = TWebDocument(parse_document(self.resource))
+
+  def build(self, *, width=80, source_page=None, focus=None):
+    rendered, links, controls, lm, cm = self.app._render_document(self.document, content_width=width)
+    return self.app._build_browser_page(
+      resource=self.resource, document=self.document, rendered=rendered,
+      links=links, controls=controls, link_metadata=lm, control_metadata=cm,
+      content_width=width, source_page=source_page, pane_focus_target_path=focus,
+      is_partial=False,
+    )
+
+  def test_toggle_reuses_panes_metadata_and_restores_full_buffer(self) -> None:
+    page = self.build()
+    self.assertTrue(page.source_pane_groups)
+    focus = next(path for path, result in page.pane_render_cache.items() if "Article body." in result.text)
+    with patch("tweb.tui.collect_two_pane_targets", side_effect=AssertionError("repeated detection")), patch(
+      "tweb.tui.render_normal_subtree_with_metadata", side_effect=AssertionError("repeated pane render"),
+    ):
+      focused = self.build(source_page=page, focus=focus)
+      restored = self.build(source_page=focused)
+    self.assertIs(focused.source_buffer, page.source_buffer)
+    self.assertIs(restored.buffer, page.buffer)
+    self.assertEqual(restored.links, page.links)
+    self.assertEqual(restored.source_control_metadata, page.source_control_metadata)
+    self.assertNotIn("Sidebar", focused.rendered)
+    self.assertTrue(focused.buffer.link_spans)
+
+  def test_resize_discards_pane_render_cache(self) -> None:
+    page = self.build()
+    resized = self.build(width=60, source_page=page)
+    self.assertIsNot(resized.source_buffer, page.source_buffer)
+    self.assertIsNot(resized.pane_render_cache, page.pane_render_cache)
+    self.assertEqual(resized.content_width, 60)
+
+  def test_mutation_rerender_refreshes_pane_text(self) -> None:
+    page = self.build()
+    self.document.document.find_first("p").set_text_content("Changed article body.")
+    updated = self.build()
+    self.assertIn("Changed article body.", updated.rendered)
+    self.assertIsNot(updated.pane_render_cache, page.pane_render_cache)
+    self.assertTrue(any("Changed article body." in result.text for result in updated.pane_render_cache.values()))
+
+  def test_phase_timings_are_observable(self) -> None:
+    with self.assertLogs("tweb", level="DEBUG") as logs:
+      page = self.build()
+    for name in ("page_build", "source_buffer", "pane_detection", "display_buffer", "pane_regions"):
+      self.assertGreaterEqual(page.build_timings_ms[name], 0)
+      self.assertTrue(any("phase=" + name + " " in line for line in logs.output))
+    self.assertTrue(any("phase=renderer " in line for line in logs.output))
+    self.assertTrue(any("phase=controls_and_links " in line for line in logs.output))
+
+  def test_cancelled_assembly_stops_before_pane_detection(self) -> None:
+    worker = Mock()
+    worker.cancelled_event.is_set.side_effect = [False, True]
+    with patch("tweb.tui.get_current_worker", return_value=worker), patch(
+      "tweb.tui.collect_two_pane_targets", side_effect=AssertionError("work after cancel"),
+    ):
+      with self.assertRaises(FetchCancelled):
+        self.build()
+
+
 class TuiCliWidthTest(unittest.TestCase):
   @patch("tweb.tui.TwebBrowserApp")
   @patch("tweb.tui.shutil.get_terminal_size", return_value=os.terminal_size((132, 24)))

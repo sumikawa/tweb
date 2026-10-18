@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 import importlib.resources
 import json
@@ -11,7 +12,7 @@ import shutil
 import subprocess
 import tempfile
 from time import monotonic
-from typing import Callable
+from typing import Callable, Iterator
 from rich.text import Text
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -21,11 +22,11 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual import events
-from textual.worker import Worker, WorkerState, get_current_worker
+from textual.worker import NoActiveWorker, Worker, WorkerState, get_current_worker
 from textual.widgets import Input, Label, Static, TextArea
 
 from .api import Link, TWebDocument
-from .dom import ElementNode
+from .dom import DocumentNode, ElementNode
 from .fetcher import FetchCancelled, FetchError, Resource, create_session, fetch_resource, normalize_target
 from .interactions import ButtonClickPolicy, ButtonClickResult, FormControl, is_button_control, is_submit_control, is_text_entry_control
 from .js_runtime import JavaScriptRuntimeError
@@ -34,6 +35,7 @@ from .renderers.dom import render_dom
 from .renderers.normal import (
   ANSI_ESCAPE_RE,
   PaneTarget,
+  NormalRenderResult,
   RenderedControlMetadata,
   RenderedLinkMetadata,
   _display_width,
@@ -57,6 +59,29 @@ BLOCK_DEBUG_BACKGROUND_STYLES = (
 )
 WELCOME_PAGE_TARGET = str(Path(importlib.resources.files("tweb").joinpath("data", "welcome.html")).resolve())
 LOGGER = logging.getLogger("tweb")
+
+
+def _check_render_cancelled() -> None:
+  try:
+    worker = get_current_worker()
+  except NoActiveWorker:
+    return
+  if worker.cancelled_event.is_set():
+    raise FetchCancelled("cancelled TUI page assembly")
+
+
+@contextmanager
+def _tui_phase(name: str, timings: dict[str, float] | None = None) -> Iterator[None]:
+  started_at = monotonic()
+  try:
+    yield
+  finally:
+    elapsed_ms = (monotonic() - started_at) * 1000
+    if timings is not None:
+      timings[name] = elapsed_ms
+    LOGGER.debug("tui timing phase=%s elapsed_ms=%.3f", name, elapsed_ms)
+
+
 DEFAULT_HISTORY_PATH = Path("~/.config/tw/history.json").expanduser()
 BUILTIN_HISTORY_EXCLUDED_TARGETS = frozenset((str(Path(WELCOME_PAGE_TARGET).resolve()),))
 
@@ -262,6 +287,10 @@ class BrowserPage:
   source_control_metadata: tuple[RenderedControlMetadata, ...] = ()
   source_buffer: RenderedBuffer | None = None
   source_pane_groups: list[tuple[PaneTarget, PaneTarget]] | None = None
+  content_width: int | None = None
+  full_page_buffer: RenderedBuffer | None = None
+  pane_render_cache: dict[tuple[int, ...], NormalRenderResult] = field(default_factory=dict)
+  build_timings_ms: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -2209,24 +2238,19 @@ class TwebBrowserApp(App[None]):
         (),
         (),
       )
-    result = render_normal_with_metadata(
-      document.document,
-      width=resolved_width,
-      link_style="none",
-      text_styles=False,
-      max_blocks=max_blocks,
-      session=self.session,
-    )
-    return (
-      result.text,
-      [
-        Link(text=text, href=href)
-        for text, href in visible_links_from_render_result(result)
-      ],
-      document.form_controls(),
-      result.link_spans,
-      result.control_spans,
-    )
+    with _tui_phase("renderer"):
+      result = render_normal_with_metadata(
+        document.document,
+        width=resolved_width,
+        link_style="none",
+        text_styles=False,
+        max_blocks=max_blocks,
+        session=self.session,
+      )
+    with _tui_phase("controls_and_links"):
+      links = [Link(text=text, href=href) for text, href in visible_links_from_render_result(result)]
+      controls = document.form_controls()
+    return result.text, links, controls, result.link_spans, result.control_spans
 
   def _is_loading(self) -> bool:
     return self.loading_worker is not None and not self.loading_worker.is_finished
@@ -2288,19 +2312,20 @@ class TwebBrowserApp(App[None]):
       return
     content = self.query_one("#content", Static)
     cursor_line, cursor_column = self._cursor_line_col()
-    content.update(
-      _build_content_text(
-        self.current_page.buffer,
-        self.cursor_index,
-        self.viewport_line,
-        self._viewport_height(),
-        self.editing_control_id,
-        self.debug_block_colors,
-        viewport_width=self._content_width(),
-        cursor_line=cursor_line,
-        cursor_column=cursor_column,
+    with _tui_phase("viewport"):
+      content.update(
+        _build_content_text(
+          self.current_page.buffer,
+          self.cursor_index,
+          self.viewport_line,
+          self._viewport_height(),
+          self.editing_control_id,
+          self.debug_block_colors,
+          viewport_width=self._content_width(),
+          cursor_line=cursor_line,
+          cursor_column=cursor_column,
+        )
       )
-    )
 
   def _jump_viewport_to_line(self, target_line: int) -> None:
     if self.current_page is None:
@@ -2917,92 +2942,87 @@ class TwebBrowserApp(App[None]):
     control_metadata: tuple[RenderedControlMetadata, ...] = (),
     content_width: int | None = None,
     pane_focus_target_path: tuple[int, ...] | None = None,
+    source_page: BrowserPage | None = None,
   ) -> BrowserPage:
+    # source_page is supplied only by pane toggles: DOM, source text and width
+    # are unchanged. Loads, mutations, resize and background renders rebuild it.
     resolved_width = self._content_width() if content_width is None else max(content_width, 40)
     resolved_pane_focus_target_path = self.pane_focus_target_path if pane_focus_target_path is None else pane_focus_target_path
-    interactive_keys = _interactive_order_keys(document, links, controls)
-    source_link_metadata = link_metadata
-    source_control_metadata = control_metadata
-    source_buffer = _build_render_buffer(
-      rendered,
-      links,
-      controls,
-      interactive_keys,
-      link_metadata=source_link_metadata,
-      control_metadata=source_control_metadata,
+    reuse_source = (
+      source_page is not None
+      and source_page.document is document
+      and source_page.content_width == resolved_width
+      and source_page.source_rendered == rendered
+      and source_page.source_buffer is not None
     )
-    source_pane_groups = collect_two_pane_targets(
-      document.document,
-      width=resolved_width,
-      session=self.session,
-    )
-    display_rendered = rendered
-    display_links = links
-    display_link_metadata = source_link_metadata
-    display_control_metadata = source_control_metadata
-    if resolved_pane_focus_target_path is not None:
-      pane_node = _element_node_at_path(
-        document.document.body or document.document.root,
-        resolved_pane_focus_target_path,
-      )
-      if pane_node is not None:
-        subtree_result = render_normal_subtree_with_metadata(
-          document.document,
-          pane_node,
-          width=resolved_width,
-          link_style="none",
-          text_styles=False,
-          include_title=False,
-          session=self.session,
+    timings: dict[str, float] = {}
+    pane_cache = source_page.pane_render_cache if reuse_source else {}
+    with _tui_phase("page_build", timings):
+      _check_render_cancelled()
+      with _tui_phase("interactive_order", timings):
+        interactive_keys = _interactive_order_keys(document, links, controls)
+      with _tui_phase("source_buffer", timings):
+        source_buffer = source_page.source_buffer if reuse_source else _build_render_buffer(
+          rendered, links, controls, interactive_keys,
+          link_metadata=link_metadata, control_metadata=control_metadata,
         )
-        display_rendered = subtree_result.text
-        display_links = [
-          Link(text=text, href=href)
-          for text, href in visible_links_from_render_result(subtree_result)
-        ]
-        display_link_metadata = subtree_result.link_spans
-        display_control_metadata = subtree_result.control_spans
-    # Initial full-page rendering is the common path.  Its display buffer is
-    # exactly the source buffer, so avoid rebuilding every position/span map.
-    # Keep a distinct buffer only when focusing a pane changes the rendered
-    # text and metadata.
-    buffer = source_buffer
-    if resolved_pane_focus_target_path is not None:
-      buffer = _build_render_buffer(
-        display_rendered,
-        display_links,
-        controls,
-        interactive_keys,
-        link_metadata=display_link_metadata,
-        control_metadata=display_control_metadata,
-      )
-    if source_pane_groups and resolved_pane_focus_target_path is None:
-      buffer = _merge_regions_by_pane_target(
-        document.document,
-        buffer,
-        list(source_pane_groups),
-        width=resolved_width,
-        session=self.session,
-      )
-    if resolved_pane_focus_target_path is not None:
-      buffer = _replace_buffer_block_regions(
-        buffer,
-        [_build_single_content_block_region(display_rendered, buffer.line_starts, buffer.line_visible_ends)],
-      )
+      _check_render_cancelled()
+      with _tui_phase("pane_detection", timings):
+        source_pane_groups = source_page.source_pane_groups if reuse_source else collect_two_pane_targets(
+          document.document, width=resolved_width, session=self.session,
+        )
+      display_rendered = rendered
+      display_links = links
+      display_link_metadata = link_metadata
+      display_control_metadata = control_metadata
+      _check_render_cancelled()
+      with _tui_phase("focused_pane", timings):
+        if resolved_pane_focus_target_path is not None:
+          pane_node = _element_node_at_path(
+            document.document.body or document.document.root,
+            resolved_pane_focus_target_path,
+          )
+          if pane_node is not None:
+            subtree_result = _cached_pane_render(
+              document.document, pane_node, resolved_pane_focus_target_path,
+              pane_cache, width=resolved_width, session=self.session,
+            )
+            display_rendered = subtree_result.text
+            display_links = [Link(text=text, href=href) for text, href in visible_links_from_render_result(subtree_result)]
+            display_link_metadata = subtree_result.link_spans
+            display_control_metadata = subtree_result.control_spans
+      _check_render_cancelled()
+      with _tui_phase("display_buffer", timings):
+        buffer = source_buffer
+        full_page_buffer = source_page.full_page_buffer if reuse_source else None
+        if resolved_pane_focus_target_path is not None:
+          buffer = _build_render_buffer(
+            display_rendered, display_links, controls, interactive_keys,
+            link_metadata=display_link_metadata, control_metadata=display_control_metadata,
+          )
+          buffer = _replace_buffer_block_regions(
+            buffer,
+            [_build_single_content_block_region(display_rendered, buffer.line_starts, buffer.line_visible_ends)],
+          )
+        else:
+          if full_page_buffer is None:
+            full_page_buffer = source_buffer
+            if source_pane_groups:
+              with _tui_phase("pane_regions", timings):
+                full_page_buffer = _merge_regions_by_pane_target(
+                  document.document, source_buffer, list(source_pane_groups),
+                  width=resolved_width, session=self.session, pane_render_cache=pane_cache,
+                )
+          buffer = full_page_buffer
+    LOGGER.debug("tui page build reused_source=%s pane_groups=%d", reuse_source, len(source_pane_groups or []))
     return BrowserPage(
-      resource=resource,
-      document=document,
-      rendered=display_rendered,
-      links=display_links,
-      controls=controls,
-      buffer=buffer,
-      is_partial=is_partial,
-      source_rendered=rendered,
-      source_links=links,
-      source_link_metadata=source_link_metadata,
-      source_control_metadata=source_control_metadata,
-      source_buffer=source_buffer,
-      source_pane_groups=source_pane_groups,
+      resource=resource, document=document, rendered=display_rendered,
+      links=display_links, controls=controls, buffer=buffer, is_partial=is_partial,
+      source_rendered=rendered, source_links=links,
+      source_link_metadata=link_metadata, source_control_metadata=control_metadata,
+      source_buffer=source_buffer, source_pane_groups=source_pane_groups,
+      content_width=resolved_width, full_page_buffer=full_page_buffer,
+      pane_render_cache=pane_cache, build_timings_ms=timings,
     )
 
   def _capture_cursor_restore_context(self) -> CursorRestoreContext:
@@ -3084,11 +3104,12 @@ class TwebBrowserApp(App[None]):
       resource=self.current_page.resource,
       document=self.current_page.document,
       rendered=rendered,
-      links=self.current_page.source_links or self.current_page.links,
+      links=self.current_page.source_links if self.current_page.source_links is not None else self.current_page.links,
       controls=self.current_page.controls,
       link_metadata=self.current_page.source_link_metadata,
       control_metadata=self.current_page.source_control_metadata,
       is_partial=self.current_page.is_partial,
+      source_page=self.current_page,
     )
     self._set_cursor_position(self._cursor_for_line_context(
       line_snippet,
@@ -3206,15 +3227,11 @@ class TwebBrowserApp(App[None]):
         pane_node = _element_node_at_path(root, pane_target.path)
         if pane_node is None:
           continue
-        rendered = render_normal_subtree(
-          document.document,
-          pane_node,
-          width=self._content_width(),
-          link_style="none",
-          text_styles=False,
-          include_title=False,
-          session=self.session,
-        )
+        rendered = _cached_pane_render(
+          document.document, pane_node, pane_target.path,
+          self.current_page.pane_render_cache,
+          width=self._content_width(), session=self.session,
+        ).text
         if normalized_snippet not in _normalize_pane_match_text(rendered):
           continue
         matching_targets.append(pane_target)
@@ -3560,6 +3577,25 @@ def _multi_region_groups(block_regions: list[BlockRegion]) -> list[list[BlockReg
   return multi_region_groups
 
 
+def _cached_pane_render(
+  document: DocumentNode,
+  node: ElementNode,
+  path: tuple[int, ...],
+  cache: dict[tuple[int, ...], NormalRenderResult],
+  *,
+  width: int,
+  session: requests.Session | None,
+) -> NormalRenderResult:
+  result = cache.get(path)
+  if result is None:
+    result = render_normal_subtree_with_metadata(
+      document, node, width=width, link_style="none", text_styles=False,
+      include_title=False, session=session,
+    )
+    cache[path] = result
+  return result
+
+
 def _merge_regions_by_pane_target(
   document,
   buffer: RenderedBuffer,
@@ -3567,6 +3603,7 @@ def _merge_regions_by_pane_target(
   *,
   width: int,
   session: requests.Session | None,
+  pane_render_cache: dict[tuple[int, ...], NormalRenderResult] | None = None,
 ) -> RenderedBuffer:
   root = document.body or document.root
   if root is None or not buffer.block_regions:
@@ -3576,21 +3613,16 @@ def _merge_regions_by_pane_target(
   if not pane_targets:
     return buffer
 
+  cache = {} if pane_render_cache is None else pane_render_cache
   normalized_by_path: dict[tuple[int, ...], str] = {}
   for pane_target in pane_targets:
     pane_node = _element_node_at_path(root, pane_target.path)
     if pane_node is None:
       continue
     normalized_by_path[pane_target.path] = _normalize_pane_match_text(
-      render_normal_subtree(
-        document,
-        pane_node,
-        width=width,
-        link_style="none",
-        text_styles=False,
-        include_title=False,
-        session=session,
-      )
+      _cached_pane_render(
+        document, pane_node, pane_target.path, cache, width=width, session=session,
+      ).text
     )
 
   if not normalized_by_path:

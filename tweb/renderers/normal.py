@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 import re
+import logging
 from typing import Any
 import unicodedata
 
@@ -27,6 +28,9 @@ from ..interactions import (
   _textarea_token,
   _textarea_value,
 )
+
+LOGGER = logging.getLogger("tweb")
+
 
 BLOCK_TAGS = {
   "article",
@@ -594,18 +598,24 @@ def collect_two_pane_targets(
   viewport_columns: int | None = None,
   session: Any = None,
 ) -> list[tuple[PaneTarget, PaneTarget]]:
-  if not _may_have_two_pane_targets(document):
+  # Check the renderer's static-rich policy before scanning layout hints.
+  # These pages are rendered without full CSS, so CSS-based pane detection
+  # would both duplicate work and disagree with their displayed layout.
+  if _should_use_lightweight_style_render(document):
+    LOGGER.debug("pane detection skipped reason=lightweight-render")
     return []
-  state = _create_render_state(
-    document,
+  if not _may_have_two_pane_targets(document):
+    LOGGER.debug("pane detection skipped reason=no-layout-candidate")
+    return []
+  state = RenderState(
+    document=document,
     width=width,
-    viewport_columns=viewport_columns,
     link_style="none",
     text_styles=False,
-    session=session,
+    style_context=build_style_context(
+      document, viewport_columns=viewport_columns or max(width, 160), session=session,
+    ),
   )
-  if state.lightweight_style_only:
-    return []
   root = document.body or document.root
   if root is None:
     return []
@@ -616,13 +626,18 @@ def _may_have_two_pane_targets(document: DocumentNode) -> bool:
   root = document.body or document.root
   if root is None:
     return False
-  for node in root.iter_nodes():
-    if not isinstance(node, ElementNode) or node.tag in SKIP_TAGS:
+  pending = [root]
+  while pending:
+    node = pending.pop()
+    if node.tag in SKIP_TAGS or _is_statically_hidden_layout_child(node):
       continue
     element_children = [
       child for child in node.children
-      if isinstance(child, ElementNode) and child.tag not in SKIP_TAGS
+      if isinstance(child, ElementNode)
+      and child.tag not in SKIP_TAGS
+      and not _is_statically_hidden_layout_child(child)
     ]
+    pending.extend(reversed(element_children))
     if len(element_children) < 2:
       continue
     style = (node.attrs.get("style") or "").replace(" ", "").lower()

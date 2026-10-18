@@ -31,11 +31,15 @@
 ## 現在地
 
 - 完了済み Phase:
-  Phase 1 から Phase 15。基礎取得、通常表示、DOM 表示、BeautifulSoup 互換 API、CSS、quick.js 実行、Textual TUI、browser-render fallback、AI 向け snapshot / preflight / mutate API、generic runtime data collector、JS runtime の計測/キャッシュ基盤、認証情報マネージャ連携、renderer metadata 一体化、interactive metadata fallback 撤去まで揃っている。
+  Phase 1 から Phase 12、Phase 14 から Phase 16。基礎取得、通常表示、DOM 表示、BeautifulSoup 互換 API、CSS、quick.js 実行、Textual TUI、browser-render fallback、AI 向け snapshot / preflight / mutate API、generic runtime data collector、JS runtime の計測/キャッシュ基盤、renderer metadata 一体化、interactive metadata fallback 撤去、TUI ページ構築の計測と pane 切り替え時のキャッシュ再利用まで揃っている。
+- 未着手 Phase:
+  Phase 13（外部認証情報マネージャ連携）、Phase 18、Phase 19。Phase 13 には Cookie import と password 編集の既存基盤があるが、外部コマンドからの入力フローは未実装。
+- 一部実装済み Phase:
+  Phase 17。本文だけを表示する `--mode text --main-only` は実装済み。不要リソースの分類制御と本文安定ベースの終了判定は未着手。
 - 進行中 Phase:
   Cross-cutting のセキュリティ。AI 向け API の基本境界は固まったが、same-origin、credential injection、外部認証フローの詳細化は継続中。
 - 次の主対象 Phase:
-  Phase 16。TUI の page assembly / pane detection / static-rich article 判定を見直し、`--mode text` と比べて不自然に遅い page を renderer 以外の後段処理で待たせないようにする。
+  Phase 17。実装済みの本文表示オプションを維持し、不要リソースの抑制と本文安定ベースの終了判定を進める。
 - 次点の設計課題:
   Phase 18 の後は、MCP surface を使った session 管理、認可モデル、observable debug surface をどこまで共通 API に寄せるかを詰める。
 - 後続 backlog:
@@ -54,7 +58,7 @@
 2. セキュリティ:
    JS button / fetch / navigation / credential injection の許可モデルを `SECURITY.md` と `API.md` に揃えて、どこまでが既定拒否かをさらに詰める。
 3. Phase 16:
-   TUI の page build が renderer 本体より遅くならないよう、pane detection・buffer 構築・viewport 更新の hot path を計測して削る。特に static-rich article では multi-pane 検出や full CSS 依存の後段処理を cheap gate で避け、`--mode text` との差分を説明できるようにする。
+   完了。renderer・controls/links・page build・viewport の段階別 timing、static-rich / hidden subtree の pane detection gate、pane 切り替え時のバッファと描画 metadata 再利用を実装した。計測結果は `docs/performance.md` に記録する。
 4. Phase 17:
    WRS 的な最小レンダラ寄りの改善として、本文理解に不要なリソースを抑制し、render 完了判定を「画面全体」ではなく「本文安定」に寄せる。XHR/fetch は本文寄与の高いものを優先し、analytics/beacon/reporting 系は既定で落とせるようにする。
 5. Phase 18:
@@ -314,7 +318,7 @@
 
 ### Phase 13: 認証情報マネージャ連携
 
-状態: 完了
+状態: 未着手（Cookie import・password 編集・AI API の確認要求は既存基盤として実装済み）
 
 目的:
 
@@ -327,7 +331,8 @@
 
 既実装:
 
-- Cookie / session の明示持ち込みは CLI 側にあり、input 編集や submit も既に「明示操作だけを許す」方向なので、secret manager 連携を同じ許可モデルに載せる前提はある
+- CLI の Cookie / session 持ち込み、TUI の password 編集、AI 向け mutate API の password 入力確認は実装済み
+- 外部 secret manager / 外部コマンドの実行と入力欄への受け渡しは未実装。既存の手動入力・Cookie import と区別する
 
 未完了:
 
@@ -403,53 +408,37 @@
 
 ### Phase 16: TUI Rendering Path Performance
 
-状態: 未着手
+状態: 完了（最初のスコープ。2026-10-19）
 
 目的:
 
-- `--mode text` では十分速い page でも TUI では数秒単位で遅くなる、という差分を renderer 以外の後段処理から切り分けて潰す
-- `render_normal*()` の時間、`RenderedBuffer` 構築、viewport text 生成、pane detection、focused-pane 用 metadata 再利用のどこが支配的かを、TUI 内部計測で説明できるようにする
-- multi-pane page の UX を維持したまま、single-column article や static-rich page で不必要な pane detection / full CSS 依存処理を避ける
+- `--mode text` と TUI の待ち時間差を renderer と後段処理に分けて説明できるようにする
+- single-column / static-rich article の不要な pane 検出を避け、multi-pane の `v` 操作を維持する
 
-設計案:
+実装済み:
 
-- `_build_browser_page()` を phase 別に計測できるようにし、renderer 本体、source/display buffer 構築、pane target 収集、viewport 更新の時間を分けて追う
-- `collect_two_pane_targets()` のような重い後段処理は、static-rich article 判定や cheap structural gate を先に通して不要時は早期 return する
-- multi-pane 判定が必要な page でも、render pass 中に得られた style / block / pane 情報を再利用し、TUI 後段で同じ CSS 判定を再実行しない方向へ寄せる
-- focused-pane / restored-all-panes の UI 契約は維持しつつ、pane-aware metadata を source page 側へ cache し、cursor restore や pane toggle で再計算を最小化する
-- `rendering more...` 中の体感速度悪化は renderer 遅延だけでなく TUI 後段の長い同期処理でも起こりうるため、入力優先・deferred work 中断と hot path 短縮を一体で扱う
+- debug log の `tui timing phase=... elapsed_ms=...` で、renderer、controls/links、page build、interactive order、source buffer、pane detection、focused pane、display buffer、pane region 統合、viewport 更新を計測する。ページ構築分は `BrowserPage.build_timings_ms` にも保持する
+- pane detection は通常レンダラと同じ lightweight 判定を先に評価し、該当ページでは layout hint の走査と full CSS 構築を行わない。構造走査は hidden / template 等の対象外 subtree に降りず、表示に寄与しない layout hint による false positive を減らす
+- `BrowserPage` に source buffer、全体表示用 buffer、pane target、pane subtree の `NormalRenderResult` を保持する。本文照合と focus 描画で同じ text / interactive metadata を再利用する
+- `v` の切り替えだけが元のページキャッシュを明示的に渡す。同一 document・source text・width のとき再利用し、load / DOM 更新後の rerender / resize / background render では新規構築する
+- ページ構築の段階間で worker のキャンセルを検査し、キャンセル済みの後段処理を続けない
 
-最初のスコープ:
+検証:
 
-- TUI page build の phase timing を live repro で採る
-- static-rich article に対する pane detection skip / cheap gate を入れる
-- single-column article で `--mode text` と TUI の差分が renderer 本体以外で膨らまないことを確認する
-- multi-pane fixture の `v` 操作回帰を維持したまま、高コスト page の false positive を減らす
+- TUI / normal renderer / CLI の 271 tests が成功。既存の multi-pane focus / restore、リンク、カーソル復元、nested pane、resize、background render 中断の回帰を含む
+- hidden/template 内だけの layout hint、static-rich page の CSS/走査省略、外部 stylesheet の true multi-pane、キャッシュ再利用、resize・DOM 更新時の破棄、段階別計測、キャンセルを追加テストで固定した
+- 取得した Python ドキュメントの HTML を Textual headless TUI で再生し、キーボード `v` による focus / restore と本文復元を確認した。実ターミナルでの体感確認とは区別する
+- 同一取得 HTML による API 直測と TUI 計測は `docs/performance.md` に記録した。Wikipedia の live fetch は HTTP 403 のため検証できていない
 
-未解決論点:
+継続する最適化余地:
 
-- pane detection を renderer metadata / block region 生成とどこまで統合するか
-- article page と true multi-pane page を cheap に分ける structural heuristic を何で固定するか
-- TUI 専用 cache を `BrowserPage` に持たせるか、renderer 側の return contract を拡張するか
-- page load / rerender / focused-pane rebuild の 3 経路で同じ cache を安全に再利用できるか
-
-次に進める項目:
-
-- `_build_browser_page()` と `collect_two_pane_targets()` の live timing を `docs/performance.md` で追えるようにする
-- static-rich Wikipedia article のような single-column page で pane detection を skip しても `v` の契約を壊さないか確認する
-- multi-pane fixture / live repro を分け、false positive を減らしつつ true positive を落とさない cheap gate を詰める
-- 将来的に pane target を render pass から直接返す場合の contract を `TUI.md` / `PLAN.md` に反映する
-
-完了条件:
-
-- `--mode text` は速いのに TUI だけ遅い、という代表ケースで hot path が説明できる
-- single-column article / static-rich page では pane detection や full CSS 依存の後段処理が支配的にならない
-- multi-pane fixture と live repro の両方で `v` の契約が維持される
-- TUI の後段処理に関する性能方針が `PLAN.md` / `TUI.md` / `docs/performance.md` で同期されている
+- 初回の multi-pane 検出・subtree render では CSS の再評価が残る。renderer の style / block / pane 情報を単一 pass から返す拡張は今後の候補とする
+- lightweight 判定の link 数閾値は変更していない。低 link 数の記事への適用拡大は、実ページの取得・表示比較で判断する
+- キャンセルは段階間で確認する。個々の CSS matching / render / buffer 構築中を強制停止するものではない
 
 ### Phase 17: WRS-Style Rendering Efficiency
 
-状態: 未着手
+状態: 一部実装済み（本文表示オプションのみ。実行効率化の主スコープは未着手）
 
 目的:
 
@@ -473,32 +462,36 @@
 - XHR / fetch の分類制御と debug surface を追加する
 - 直前の render で「何を待ち、何を落とし、何を本文寄与と判断したか」を後から確認できるようにする
 
-オプション機能:
+実装済みの本文表示オプション:
 
-- render 後の可視本文抽出を、通常表示とは別の opt-in 機能として追加する
-- 出力は「本文のプレーンテキスト」「見出し境界」「主要リンク候補」程度の最小構造に留め、既存 renderer/TUI の正本を置き換えない
-- 通常表示が十分でも downstream の要約・検索・比較処理で本文だけ欲しいケース向けに、軽量な抽出 surface として提供する
+- CLI の `--mode text --main-only` と `main_from_path(..., main_only=True)` で、本文領域だけを通常レンダラで表示できる
+- 表示可能な `<main>` / `<article>` を優先し、存在しない場合は本文候補を推定する。候補がなければページ全体へ戻る
+- このオプションは描画対象の選択であり、JS 実行やネットワーク待ちを本文安定で打ち切る機能ではない
+
+今後の拡張候補:
+
+- 本文テキスト・見出し境界・主要リンク候補を構造化して返す専用 read API。既存 renderer/TUI の正本を置き換えない
 
 未解決論点:
 
 - リソース分類を MIME type、URL pattern、initiator 種別のどこまでで判定するか
 - 本文安定の判定に DOM node 数、可視文字数、main/article 候補、layout block 数のどれを採用するか
 - 同じ fetch でも初回本文構築に必要な API と、追跡系 API をどの程度安全に見分けられるか
-- 可視本文抽出の opt-in surface を `snapshot()` 系へ寄せるか、独立 debug/read API にするか
+- CLI の本文表示に加えて構造化抽出を提供する場合、`snapshot()` 系へ寄せるか、独立 read API にするか
 
 次に進める項目:
 
 - 既存 debug log と `javascript_debug()` / `hydration_debug()` の出力を確認し、追加すべき resource/network/render-cutoff reason を棚卸しする
 - render 完了判定の候補指標を小さな fixture と既知の JS-heavy サイトで比較し、過待機と早切りの失敗 class を整理する
 - `SECURITY.md` / `JS.md` に、本文理解のために許可するネットワークと既定で落とすネットワークの方針を書く
-- 可視本文抽出をオプション機能として入れる場合の呼び出し面と戻り値の最小案を `API.md` 候補としてまとめる
+- 既存の `--main-only` を基盤に構造化抽出を追加する場合、呼び出し面と戻り値の最小案を `API.md` 候補としてまとめる
 
 完了条件:
 
 - JS-heavy ページで、本文理解に不要なリソース待ちによる無駄時間を減らせる
 - render 打ち切り理由と subresource/XHR の許可・遮断判断を debug から説明できる
 - 本文安定ベースの完了判定が live repro と focused tests の両方で回帰管理される
-- 可視本文抽出は opt-in 機能として追加され、既存の通常表示/TUI 契約を壊さない
+- 実装済みの `--main-only` は opt-in を維持し、実行効率化を加えても既存の通常表示/TUI 契約を壊さない。構造化抽出 API は追加の拡張候補とする
 
 ### Phase 18: MCP Adapter Surface
 

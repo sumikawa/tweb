@@ -166,3 +166,37 @@ captcha / challenge / anti-bot 理由で canonical audit から外した、ま�
   ただし性能評価は API 直測だけで完了扱いにせず、最終的には TUI で十分速いかどうかを基準にする。`--mode text` や `render_normal()` 単体が速くても TUI が遅いなら、`_build_browser_page()`、pane detection、viewport 更新、buffer 構築のような後段 hot path を疑う。逆に static-rich / lightweight render 判定が期待どおり発火していない場合は、その原因として `link_count` 閾値も必ず候補に入れる。Athlon 64 のように readable body と stylesheet 数は十分でも `link_count` 条件だけで lightweight path が外れ、QuickJS / TUI 両方の体感遅延へつながるケースがあるため、今後の rerun でも「TUI で速いか」を正本にしつつ、性能が出ない page では `link_count` を含む static-rich 判定全体を見直す。
 - `note-home`
   canonical cohort ではないが、runtime performance の stress test としては引き続き有用。 async drain、external script fetch、huge bundle eval の切り分けに使う。
+
+## 2026-10-19: Phase 16 TUI page assembly
+
+対象は canonical audit cohort 外の TUI 性能検証。品質分類と `active_site_ids` は変更していない。
+
+### 計測条件
+
+- 比較元は `7809c38`。対象は `https://www.python.org/about/`（HTTP 200、41,239 bytes）と `https://docs.python.org/3/tutorial/`（HTTP 200、37,315 bytes）からこの日に取得した HTML
+- 同一取得 HTML を `Resource` として再生し、width=80 で `_render_document()` → `_build_browser_page()` → `_rebuild_current_page_view()` を直測した。QuickJS 実行・初回 HTML fetch は計測に含まない。CSS 取得・解析は各処理の通常経路を使う
+- 下表は各版 1 回の参考値。ネットワーク/CSS cache の揺れがあるため、初回 renderer / build の小差を改善率として扱わない
+
+| 対象 | renderer 変更前→変更後 | page build 変更前→変更後 | 同一ページの view rebuild 変更前→変更後 | pane groups |
+| --- | --- | --- | --- | --- |
+| Python About | 287.3 → 301.2ms | 1.75 → 2.10ms | 1.77 → 0.46ms | 0 |
+| Python Tutorial | 131.8 → 140.3ms | 72.13 → 81.53ms | 57.84 → 0.52ms | 3 |
+
+単一カラムの Python About では後段 page build は約2msで、renderer との時間差は後段処理に起因しない。Python Tutorial では初回の pane detection / region 統合コストが残る一方、view rebuild での再検出・source buffer 再生成・pane の再描画は除去できた。
+
+### Textual TUI での確認
+
+同じ Python Tutorial HTML を 100 columns × 30 rows の Textual `run_test()` で再生した。HTML fetch と埋め込み JS 実行を差し替え、Phase 16 の表示経路に限定して、描画された pane の行へカーソルを置き `pilot.press("v")` で focus / restore した。
+
+- 全体表示は pane groups `3`。最終 page build 約 `188.4ms`（pane detection 約 `144.9ms`、pane region 統合約 `39.9ms`）
+- focus 時の page build 約 `10.6ms`、restore 時約 `0.82ms`。全体本文が元と一致し、focus 中は他 pane を除去できた
+- 同 run の viewport 更新は約 `0.9–7.5ms`。キー送信・イベントループの待ち時間は上記 phase timing に含まない
+- 実ターミナルでの体感・視認確認は未実施。Wikipedia `Athlon_64` は HTTP 403 で取得できず、この日の live 比較には使っていない
+
+### 回帰確認と残る境界
+
+`python -m unittest tests.test_tui tests.test_normal_renderer tests.test_cli` は **271 tests 成功**。hidden/template 内だけの layout hint、static-rich page の検出省略、外部 CSS の true multi-pane、キャッシュ再利用と resize / DOM 更新時の破棄、timing 出力、キャンセルを含む。
+
+`--debug` の `tui timing phase=... elapsed_ms=...` と `BrowserPage.build_timings_ms` で同じ段階を追える。`page_build` は子フェーズを含む合計で、renderer・controls/links・viewport は別計測。キャッシュは `v` による同一ページ・同一幅の切り替えだけで再利用する。新規 load、mutation 後の rerender、resize、background render は作り直す。
+
+初回 multi-pane の full CSS 再評価、低 link 数記事への lightweight 判定拡大、単一フェーズ中の強制中断は今後の最適化候補として残す。

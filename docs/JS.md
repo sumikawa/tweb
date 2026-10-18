@@ -208,7 +208,7 @@
 - `fetch` / `XMLHttpRequest` は API 名としては使えるが、内部では既存の Python 取得層を同期的に呼ぶ最小実装であり、実ブラウザの通信モデルそのものではない
 - ローカルファイルと `http` / `https` を扱えるが、same-origin policy、CORS、SSRF 制御、追加通信の許可モデルはまだ未整理
 - TUI / CLI で保持している session を渡した場合は、その session を経由して取得する
-- TUI から `type="button"` の click を実行し、`onclick` や `addEventListener("click", ...)` による DOM 更新を反映できるが、通信や遷移の分類は未整理
+- TUI / API から JS 駆動 button の click を実行し、DOM 更新・通信・遷移を分類できる。`off` / `dom-only` / `network` の段階許可があり、低レベル API の既定は `dom-only`、TUI の既定は `network`。same-origin / CORS / SSRF を含む通信先の制御は未整備
 - `iframe` は `contentDocument` / `contentWindow` を持つ最小 shim があるが、独立した実ページ読み込みや本格的な frame ナビゲーションまではしていない
 - `DOMParser` は HTML fragment に加えて XML を Python DOM へ一括解析し、namespace prefix付き要素と `getElementsByTagName()` を扱う。`canvas`、`audio`、`dialog`、`Image`、`BroadcastChannel` などは互換性のための軽量実装が中心で、描画・再生・OS 統合まで保証しない
 - `MutationObserver` / `IntersectionObserver` / `matchMedia` / `indexedDB` / `storage` は、実ページ互換のための最小動作を優先している
@@ -224,18 +224,17 @@
 - `ServiceWorker`
 - `WebSocket`
 - 実ブラウザ相当のレイアウト計算、描画、ペイント、メディア再生
-- JS 駆動 button click の詳細分類と許可制御の完成
 - すべてのクライアントレンダリング SPA を browser-render fallback なしで読める状態
 
 ## 制限と未解決事項
 
 - quick.js runtime の既定メモリ制限はあるが、CLI/TUI からの細かい調整やページ単位のポリシー分岐は未実装
-- quick.js の `set_time_limit()` は page event dispatch のような ignore-errors 経路では局所的に使い始めたが、一般の script eval 全体へ広げる厳密な wall-clock 制限は未実装
+- page event dispatch は時間制限を指定できる内部 API を持つが、通常経路では Python bridge callback との非互換を避けるため `time_limit_seconds=None` で呼ぶ。async drain budget 等はあるものの、一般の script eval や個々の callback を強制停止する厳密な wall-clock 制限は未実装
 - same-origin policy と CORS は未整理
 - `fetch` / XHR をどこまで既定許可にするかは再整理が必要
 - 外部 script cache は `URL` 基本と `Vary` 分岐の永続 cache まで実装済みで、`Vary` の広い組み合わせ対応や eviction policy は今後の整理対象である
 - iframe、worker などは一部 shim を持つが、service worker、WebSocket などは未対応
-- JS 駆動 button click は submit と別物として扱い、現状は DOM 更新までを優先している。遷移・通信の分類は強化中
+- JS 駆動 button click は submit と別経路で扱い、結果を `dom_updated` / `navigation_requested` / `network_requested` / `javascript_required` に分類する。段階許可は実装済みで、通信先の安全境界は `SECURITY.md` の継続課題とする
 - React 系サイトでは互換性を拡張し続けているが、すべてのクライアントレンダリング SPA を安定再現できる段階ではない
 - 一部の大きい bundle では quick.js コンパイラ固有の失敗を局所 fallback で吸収しており、完全互換ではなく「読めるところまで進める」方針を取っている
 
