@@ -274,3 +274,4 @@
 - 候補者一覧の修正: XML Document に selector engine の feature probe 用ノード生成 API と文書の子ノード情報を追加し、解析した XML 要素の大文字・小文字と ownerDocument を保持する。jQuery の `find('> candidate')` が 7 件を返すようになった。さらに HTML 属性のシリアライズは二重引用符の中のシングルクォートを保持し、Vue のテンプレート式に `&#x27;` が残って render function のコンパイルに失敗する問題を解消した。サイト専用 fetch / data 補完は追加していない。
 - 修正後の実 URL 確認: `--browser-render never --mode text` で候補者一覧を描画できた。取得済み HTML 内の XML と照合し、QuickJS と Chrome のテキスト出力の両方に氏名・得票数・略歴が各 7/7 件、開票率が一致することを確認した。開票データは取得時点で変わるため、この確認は保持した同じデータに対する照合結果である。周辺 script の既存エラーは残っているが、候補者一覧の生成は成功した。
 - 候補者一覧修正の回帰確認: XML selector engine の feature probe、XML の nodeName / ownerDocument、テンプレート式の HTML 属性シリアライズを追加テストした。JavaScript / document API / CLI / TUI / 通常描画 / parser の合計 699 tests がすべて成功した。
+- main の `d6ca3c6` を統合後、上記の回帰テスト 706 件がすべて成功した。実 URL も QuickJS のみで候補者 7 名と開票率を表示できることを再確認した。
