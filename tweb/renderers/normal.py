@@ -5,7 +5,7 @@ import re
 from typing import Any
 import unicodedata
 
-from ..css import StyleContext, StyleProperties, _hidden_reason, _parse_declarations, build_style_context
+from ..css import StyleContext, StyleProperties, _parse_declarations, build_style_context, style_properties_from_declarations
 from ..dom import DocumentNode, ElementNode, TextNode
 from ..interactions import (
   _button_token as _interaction_button_token,
@@ -219,6 +219,8 @@ def render_normal(
   text_styles: bool = True,
   max_blocks: int | None = None,
   session: Any = None,
+  *,
+  main_only: bool = False,
 ) -> str:
   return render_normal_with_metadata(
     document,
@@ -230,6 +232,7 @@ def render_normal(
     include_controls=True,
     include_control_metadata=True,
     session=session,
+    main_only=main_only,
   ).text
 
 
@@ -243,17 +246,45 @@ def render_normal_with_metadata(
   include_controls: bool = True,
   include_control_metadata: bool = True,
   session: Any = None,
+  *,
+  main_only: bool = False,
 ) -> NormalRenderResult:
-  effective_viewport_columns = viewport_columns or max(width, 160)
+  state = _create_render_state(
+    document,
+    width=width,
+    viewport_columns=viewport_columns,
+    link_style=link_style,
+    text_styles=text_styles,
+    max_blocks=max_blocks,
+    include_controls=include_controls,
+    include_control_metadata=include_control_metadata,
+    session=session,
+  )
+  root = _find_main_content_root(document, state) if main_only else None
+  return _render_normal_root(state, root or document.body or document.root, include_title=True)
+
+
+def _create_render_state(
+  document: DocumentNode,
+  *,
+  width: int = 80,
+  viewport_columns: int | None = None,
+  link_style: str = "none",
+  text_styles: bool = True,
+  max_blocks: int | None = None,
+  include_controls: bool = True,
+  include_control_metadata: bool = True,
+  session: Any = None,
+) -> RenderState:
   lightweight_style_only = _should_use_lightweight_style_render(document)
-  state = RenderState(
+  return RenderState(
     document=document,
     width=width,
     link_style=link_style,
     text_styles=text_styles,
     style_context=None if lightweight_style_only else build_style_context(
       document,
-      viewport_columns=effective_viewport_columns,
+      viewport_columns=viewport_columns or max(width, 160),
       session=session,
     ),
     max_blocks=max_blocks,
@@ -261,20 +292,24 @@ def render_normal_with_metadata(
     include_control_metadata=include_control_metadata,
     lightweight_style_only=lightweight_style_only,
   )
-  blocks: list[RenderBlock] = []
 
-  if document.title:
-    state.append_block(blocks, RenderBlock(document.title, kind="title"))
+
+def _render_normal_root(
+  state: RenderState,
+  root: ElementNode | None,
+  *,
+  include_title: bool,
+) -> NormalRenderResult:
+  blocks: list[RenderBlock] = []
+  if include_title and state.document.title:
+    state.append_block(blocks, RenderBlock(state.document.title, kind="title"))
     state.append_block(
       blocks,
-      RenderBlock("=" * min(len(document.title), width), kind="title_rule"),
+      RenderBlock("=" * min(len(state.document.title), state.width), kind="title_rule"),
     )
-
-  root = document.body or document.root
   if root is not None and state.can_append_block():
     blocks.extend(_render_blocks(root, state))
-
-  return _finalize_render_result(_join_blocks(blocks, width), state)
+  return _finalize_render_result(_join_blocks(blocks, state.width), state)
 
 
 def collect_visible_links(
@@ -315,19 +350,16 @@ def find_main_content_root(
   viewport_columns: int | None = None,
   session: Any = None,
 ) -> ElementNode | None:
+  if document.body is None:
+    return None
+  state = _create_render_state(document, width=width, viewport_columns=viewport_columns, session=session)
+  return _find_main_content_root(document, state)
+
+
+def _find_main_content_root(document: DocumentNode, state: RenderState) -> ElementNode | None:
   body = document.body
   if body is None:
     return None
-  lightweight_style_only = _should_use_lightweight_style_render(document)
-  state = RenderState(
-    document=document,
-    style_context=None if lightweight_style_only else build_style_context(
-      document,
-      viewport_columns=viewport_columns or max(width, 160),
-      session=session,
-    ),
-    lightweight_style_only=lightweight_style_only,
-  )
   # Walk from the document root so hidden ancestors and skipped subtrees cannot
   # supply a candidate that becomes visible when rendered on its own.
   visible_nodes: list[ElementNode] = []
@@ -351,7 +383,7 @@ def find_main_content_root(
     for node in visible_nodes:
       if node.tag == tag:
         return node
-  return _find_probable_content_root(visible_nodes) or body
+  return _find_probable_content_root(body, visible_nodes) or body
 
 
 _CONTENT_CONTAINER_TAGS = {"div", "section"}
@@ -385,29 +417,69 @@ _CHROME_MARKERS = (
 )
 
 
-def _find_probable_content_root(nodes: list[ElementNode]) -> ElementNode | None:
-  candidates: list[tuple[float, ElementNode]] = []
+@dataclass(frozen=True)
+class _ContentStats:
+  text_length: int
+  blocks: int
+  headings: int
+  links: int
+
+
+def _collect_content_stats(root: ElementNode) -> dict[int, _ContentStats]:
+  stats: dict[int, _ContentStats] = {}
+  pending = [(root, False)]
+  while pending:
+    node, visited = pending.pop()
+    if not visited:
+      pending.append((node, True))
+      pending.extend(
+        (child, False) for child in reversed(node.children)
+        if isinstance(child, ElementNode)
+      )
+      continue
+    blocks = int(node.tag in {"blockquote", "li", "p", "pre"})
+    headings = int(node.tag in HEADING_TAGS)
+    links = int(node.tag == "a")
+    text_length = 0
+    text_parts = 0
+    for child in node.children:
+      if isinstance(child, TextNode):
+        child_length = len(" ".join(child.text.split()))
+      else:
+        child_stats = stats[id(child)]
+        blocks += child_stats.blocks
+        headings += child_stats.headings
+        links += child_stats.links
+        child_length = child_stats.text_length
+      if child_length:
+        text_length += child_length
+        text_parts += 1
+    text_length += max(0, text_parts - 1)
+    if node.tag in {"#comment", "script", "style", "noscript"}:
+      text_length = 0
+    elif node.tag == "#doctype":
+      text_length = len(" ".join(node.attrs.get("__text", "").split()))
+    stats[id(node)] = _ContentStats(text_length, blocks, headings, links)
+  return stats
+
+
+def _find_probable_content_root(body: ElementNode, nodes: list[ElementNode]) -> ElementNode | None:
+  stats = _collect_content_stats(body)
+  best_node = None
+  best_score = float("-inf")
   for node in nodes:
     if node.tag not in _CONTENT_CONTAINER_TAGS:
       continue
-    score = _content_root_score(node)
-    if score is not None:
-      candidates.append((score, node))
-  if not candidates:
-    return None
-  return max(candidates, key=lambda item: item[0])[1]
+    score = _content_root_score(node, stats[id(node)])
+    if score is not None and score > best_score:
+      best_score, best_node = score, node
+  return best_node
 
 
-def _content_root_score(node: ElementNode) -> float | None:
-  text_length = len(" ".join(node.text_content().split()))
-  if text_length < 160:
+def _content_root_score(node: ElementNode, stats: _ContentStats) -> float | None:
+  if stats.text_length < 160:
     return None
-  blocks = sum(
-    len(node.find_all(tag))
-    for tag in ("blockquote", "li", "p", "pre")
-  )
-  headings = sum(len(node.find_all(tag)) for tag in HEADING_TAGS)
-  if blocks < 2 and headings == 0:
+  if stats.blocks < 2 and stats.headings == 0:
     return None
 
   identity = " ".join(
@@ -417,13 +489,12 @@ def _content_root_score(node: ElementNode) -> float | None:
   )
   content_markers = sum(marker in identity for marker in _CONTENT_MARKERS)
   chrome_markers = sum(marker in identity for marker in _CHROME_MARKERS)
-  links = len(node.find_all("a"))
-  score = min(text_length, 12_000) / 120
-  score += min(blocks, 80) * 4
-  score += min(headings, 12) * 8
+  score = min(stats.text_length, 12_000) / 120
+  score += min(stats.blocks, 80) * 4
+  score += min(stats.headings, 12) * 8
   score += content_markers * 35
   score -= chrome_markers * 45
-  score -= min(links, 80) * 0.5
+  score -= min(stats.links, 80) * 0.5
   return score
 
 
@@ -470,33 +541,18 @@ def render_normal_subtree_with_metadata(
   include_control_metadata: bool = True,
   session: Any = None,
 ) -> NormalRenderResult:
-  effective_viewport_columns = viewport_columns or max(width, 160)
-  lightweight_style_only = _should_use_lightweight_style_render(document)
-  state = RenderState(
-    document=document,
+  state = _create_render_state(
+    document,
     width=width,
+    viewport_columns=viewport_columns,
     link_style=link_style,
     text_styles=text_styles,
-    style_context=None if lightweight_style_only else build_style_context(
-      document,
-      viewport_columns=effective_viewport_columns,
-      session=session,
-    ),
     max_blocks=max_blocks,
     include_controls=include_controls,
     include_control_metadata=include_control_metadata,
-    lightweight_style_only=lightweight_style_only,
+    session=session,
   )
-  blocks: list[RenderBlock] = []
-  if include_title and document.title:
-    state.append_block(blocks, RenderBlock(document.title, kind="title"))
-    state.append_block(
-      blocks,
-      RenderBlock("=" * min(len(document.title), width), kind="title_rule"),
-  )
-  if state.can_append_block():
-    blocks.extend(_render_blocks(root, state))
-  return _finalize_render_result(_join_blocks(blocks, width), state)
+  return _render_normal_root(state, root, include_title=include_title)
 
 
 def collect_visible_links_subtree(
@@ -538,22 +594,18 @@ def collect_two_pane_targets(
   viewport_columns: int | None = None,
   session: Any = None,
 ) -> list[tuple[PaneTarget, PaneTarget]]:
-  if _should_use_lightweight_style_render(document):
-    return []
   if not _may_have_two_pane_targets(document):
     return []
-  effective_viewport_columns = viewport_columns or max(width, 160)
-  state = RenderState(
-    document=document,
+  state = _create_render_state(
+    document,
     width=width,
+    viewport_columns=viewport_columns,
     link_style="none",
     text_styles=False,
-    style_context=build_style_context(
-      document,
-      viewport_columns=effective_viewport_columns,
-      session=session,
-    ),
+    session=session,
   )
+  if state.lightweight_style_only:
+    return []
   root = document.body or document.root
   if root is None:
     return []
@@ -3263,27 +3315,7 @@ def _inline_style_properties(
   inherited_visible: bool,
 ) -> StyleProperties:
   declarations = _parse_declarations(node.attrs.get("style", ""))
-  hidden_reason = _hidden_reason(node, declarations, inherited_visible=inherited_visible)
-  return StyleProperties(
-    visible=hidden_reason is None,
-    hidden_reason=hidden_reason,
-    display=declarations.get("display"),
-    height=declarations.get("height"),
-    flex_direction=declarations.get("flex-direction"),
-    flex=declarations.get("flex"),
-    flex_basis=declarations.get("flex-basis"),
-    grid_template_columns=declarations.get("grid-template-columns"),
-    width=declarations.get("width"),
-    overflow=declarations.get("overflow"),
-    visibility=declarations.get("visibility"),
-    font_weight=declarations.get("font-weight"),
-    font_style=declarations.get("font-style"),
-    text_decoration=declarations.get("text-decoration"),
-    text_align=declarations.get("text-align"),
-    margin=declarations.get("margin"),
-    margin_top=declarations.get("margin-top"),
-    margin_bottom=declarations.get("margin-bottom"),
-  )
+  return style_properties_from_declarations(node, declarations, inherited_visible)
 
 
 def _should_use_lightweight_style_render(document: DocumentNode) -> bool:

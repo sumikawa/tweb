@@ -52,7 +52,7 @@ tw ./page.html --mode text
 tw https://example.com/article --mode text --main-only
 ```
 
-`--main-only` は祖先を含む表示状態を確認し、表示可能な `<main>`、`<article>` を優先します。該当する要素がない場合は、表示可能な `div` / `section` から本文を推定します。
+`--main-only` は祖先を含む表示状態を確認し、表示可能な `<main>`、`<article>` を優先します。該当する要素がない場合は、表示可能な `div` / `section` から本文を推定します。候補の文字数・段落数・見出し数・リンク数は、子から親への一度の走査で集計します。
 
 DOM / DOM-AI:
 

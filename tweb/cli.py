@@ -27,7 +27,7 @@ from .fetcher import (
 from .js_runtime import JavaScriptRuntimeError
 from .parser import parse_document
 from .renderers.dom import render_dom
-from .renderers.normal import find_main_content_root, render_normal, render_normal_subtree
+from .renderers.normal import render_normal
 from .tui import run_tui_browser
 
 DEFAULT_TARGET = str(importlib.resources.files("tweb").joinpath("data", "welcome.html"))
@@ -185,15 +185,7 @@ def main(argv: list[str] | None = None) -> int:
       "text_styles": False,
       "session": session,
     }
-    if args.main_only:
-      root = find_main_content_root(document.document, width=width, session=session)
-      rendered = (
-        render_normal_subtree(document.document, root, **render_kwargs)
-        if root is not None
-        else render_normal(document.document, **render_kwargs)
-      )
-    else:
-      rendered = render_normal(document.document, **render_kwargs)
+    rendered = render_normal(document.document, main_only=args.main_only, **render_kwargs)
     print(rendered)
     return 0
   finally:
@@ -225,16 +217,7 @@ def main_from_path(
       variant="ai" if mode == "dom-ai" else "summary",
       viewport_columns=160,
     )
-  if main_only:
-    root = find_main_content_root(document.document)
-    if root is not None:
-      return render_normal_subtree(
-        document.document,
-        root,
-        link_style=link_style,
-        text_styles=False,
-      )
-  return render_normal(document.document, link_style=link_style, text_styles=False)
+  return render_normal(document.document, link_style=link_style, text_styles=False, main_only=main_only)
 
 
 def _load_scripts(
