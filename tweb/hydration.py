@@ -53,14 +53,21 @@ def populate_disclosure_sections(
     if not title:
       continue
     section = sections_by_title.get(title)
-    if section is None:
+    if section is None or not section.items:
       continue
     content = _disclosure_content_for_button(document, node)
     if content is None or not _is_disclosure_content_candidate(content):
       continue
-    first_item = section.items[0][0] if section.items else ""
-    if first_item and first_item in content.text_content():
+    content_text = content.text_content().strip()
+    if content.attrs.get("data-tweb-hydration-section") == section.title:
       populated.add(section.title)
+      continue
+    # A hidden panel may already contain native content or an empty form control.
+    # Recovery fills empty shells only; it must not replace a working panel.
+    if content_text or any(
+      child.tag in {"input", "select", "textarea", "button", "a", "iframe", "img", "video", "audio", "canvas"}
+      for child in _iter_descendants_inclusive(content)
+    ):
       continue
     listing = ElementNode(
       tag="ul",
@@ -80,6 +87,7 @@ def populate_disclosure_sections(
       listing.append_child(child)
     content.children = [listing]
     content.attrs["data-tweb-disclosure-content"] = "1"
+    content.attrs["data-tweb-hydration-section"] = section.title
     content.attrs["data-tweb-collapsed"] = "1"
     content.attrs["hidden"] = ""
     node.attrs["data-tweb-disclosure-button"] = "1"

@@ -153,7 +153,8 @@
 #### 現在の残差を failure class で見る
 
 - disclosure / accordion:
-  `HydrationSection` を見出し一致で hidden panel や `aria-controls` 付き button に差し込む generic disclosure 補完を入れた。Kakuyomu TOC もこの経路で開閉可能になり、残差は複数候補の曖昧解消や role ベースの対象選別に縮んだ。
+  `HydrationSection` を見出し一致で hidden panel や `aria-controls` 付き button に差し込む generic disclosure 補完を使う。site-specific section に加え、generic collector が抽出した section も同じ経路で補完する。既存のテキスト・入力欄・リンク・メディアを持つ panel と空の section は補完対象から外す。
+  本文が十分読めており、先に得た section がすべて対応する panel に補完済みなら、URL に依存せず generic collector の追加実行を省く。未対応 section があれば通常の収集を続ける。以前の Kakuyomu episode URL 限定判定は削除し、debug reason は `body-already-readable-with-disclosure-sections` とした。Kakuyomu の Apollo 目次抽出と episode URL の生成規則は引き続き site-specific 側に残る。複数候補の曖昧解消や role ベースの対象選別も今後の課題とする。
 - note.com topic runtime:
   `/api/v3/mkit_layouts/json?context=category_<topic>&page=1` の section payload を、home と同じ runtime fetch helper + Python retry helper に寄せた。`/topic/outdoor/camping` のような多段 path は API 側の `category_outdoor_camping` に正規化して叩く。残っているのは endpoint 自体が note.com 固有である点で、probe / retry の仕組み自体は residual ではなくなった。
 - note.com home runtime:

@@ -31,15 +31,6 @@ def extract_hydration_sections(
   return merge_hydration_sections(topic_sections, home_sections)
 
 
-def is_kakuyomu_work_or_episode_url(source: str) -> bool:
-  return _KAKUYOMU_WORK_PATH_RE.match(source) is not None
-
-
-def is_kakuyomu_episode_url(source: str) -> bool:
-  match = _KAKUYOMU_WORK_PATH_RE.match(source)
-  return bool(match and match.group("episode_id"))
-
-
 def _extract_kakuyomu_toc_sections(
   runtime,
   source: str,
