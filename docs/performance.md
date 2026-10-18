@@ -200,3 +200,7 @@ captcha / challenge / anti-bot 理由で canonical audit から外した、ま�
 `--debug` の `tui timing phase=... elapsed_ms=...` と `BrowserPage.build_timings_ms` で同じ段階を追える。`page_build` は子フェーズを含む合計で、renderer・controls/links・viewport は別計測。キャッシュは `v` による同一ページ・同一幅の切り替えだけで再利用する。新規 load、mutation 後の rerender、resize、background render は作り直す。
 
 初回 multi-pane の full CSS 再評価、低 link 数記事への lightweight 判定拡大、単一フェーズ中の強制中断は今後の最適化候補として残す。
+
+### main 統合時の回帰確認
+
+`b5b5273` の main を統合し、画像省略オプションを pane subtree の描画・キャッシュにも引き継いだ。キャッシュ再利用条件に画像表示設定の一致を追加した。TUI / normal renderer / CLI / JS runtime の **504 tests 成功**に加え、画像表示設定変更時のキャッシュ破棄テスト **1 test 成功**。

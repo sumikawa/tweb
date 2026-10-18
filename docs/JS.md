@@ -265,6 +265,12 @@
 
 ## 個別 URL の確認記録
 
-- 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` は、HTTP 307 の JavaScript Cookie challenge が `location.reload()` を要求する。Cookie の session 反映と再読み込み実装により、`--browser-render never --mode text` で再取得が HTTP 200 となり、記事タイトルと本文を表示できた。Chrome fallback は使用していない。
+- 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` は、HTTP 307 の JavaScript Cookie challenge が `location.reload()` を要求する。Cookie の session 反映と再読み込み実装により、`--browser-render never --mode text` で再取得が HTTP 200 となり、記事タイトルと周辺本文を表示できた。開票速報の候補者一覧はこの時点では未確認だった。Chrome fallback は使用していない。
 - 同変更の回帰確認: JavaScript / document API / CLI / TUI の 610 tests 中 609 件成功。`test_augments_note_topic_sections_from_runtime_probe` は失敗したが、作業開始時点の `828d82f` から抽出した変更前コードでも同じ失敗を再現した。今回追加した Cookie / reload / TUI の 6 tests は成功。
 - main の `2fab30f` を統合後、JavaScript / document API / CLI / TUI / 通常描画の回帰テスト 695 件がすべて成功した。
+- 同 URL の修正前の追加比較: Chrome の実ブラウザと `--browser-render always --mode text` では候補者 7 名の氏名・得票数・略歴と定数・立候補者数・開票率を表示する。一方、QuickJS の候補者一覧は 0 件で、`v-cloak` と未展開の `template v-for` が残る。表の実体は `<table>` ではなく Vue 2.6.12 が生成する `div` の一覧である。
+- 元 HTML の inline script には 7 名分の XML が含まれるため、一覧欠落はデータ未取得や通常描画レンダラの表対応が原因ではない。XML を `DOMParser` で解析後、`jQuery(xmlDocument).find('root > places > place')` が `TypeError: createElement is not implemented` で失敗する。QuickJS の同 XML に対する `querySelectorAll('root > places > place')` は 1 件を返し、単純な jQuery `find('place')` も 1 件を返す。XML Document の jQuery selector 初期化互換性が不足し、後続の Vue mount に到達しなかった。
+- 候補者一覧の修正: XML Document に selector engine の feature probe 用ノード生成 API と文書の子ノード情報を追加し、解析した XML 要素の大文字・小文字と ownerDocument を保持する。jQuery の `find('> candidate')` が 7 件を返すようになった。さらに HTML 属性のシリアライズは二重引用符の中のシングルクォートを保持し、Vue のテンプレート式に `&#x27;` が残って render function のコンパイルに失敗する問題を解消した。サイト専用 fetch / data 補完は追加していない。
+- 修正後の実 URL 確認: `--browser-render never --mode text` で候補者一覧を描画できた。取得済み HTML 内の XML と照合し、QuickJS と Chrome のテキスト出力の両方に氏名・得票数・略歴が各 7/7 件、開票率が一致することを確認した。開票データは取得時点で変わるため、この確認は保持した同じデータに対する照合結果である。周辺 script の既存エラーは残っているが、候補者一覧の生成は成功した。
+- 候補者一覧修正の回帰確認: XML selector engine の feature probe、XML の nodeName / ownerDocument、テンプレート式の HTML 属性シリアライズを追加テストした。JavaScript / document API / CLI / TUI / 通常描画 / parser の合計 699 tests がすべて成功した。
+- main の `d6ca3c6` を統合後、上記の回帰テスト 706 件がすべて成功した。実 URL も QuickJS のみで候補者 7 名と開票率を表示できることを再確認した。

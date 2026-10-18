@@ -137,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         button_click_policy=args.button_click_policy,
         use_script_cache=not args.no_script_cache,
         debug_block_colors=args.debug_block_colors,
+        include_images=not args.no_images,
       )
 
     document = TWebDocument(parse_document(resource))
@@ -183,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
       # Text mode is also used for pipes, files, and programmatic consumers.
       # Keep its output plain; the TUI applies presentation styles itself.
       "text_styles": False,
+      "include_images": not args.no_images,
       "session": session,
     }
     rendered = render_normal(document.document, main_only=args.main_only, **render_kwargs)
@@ -202,6 +204,8 @@ def main_from_path(
   mode: str = "text",
   link_style: str = "none",
   main_only: bool = False,
+  *,
+  include_images: bool = True,
 ) -> str:
   if mode == "tui":
     raise ValueError("main_from_path does not support tui mode")
@@ -217,7 +221,7 @@ def main_from_path(
       variant="ai" if mode == "dom-ai" else "summary",
       viewport_columns=160,
     )
-  return render_normal(document.document, link_style=link_style, text_styles=False, main_only=main_only)
+  return render_normal(document.document, link_style=link_style, text_styles=False, main_only=main_only, include_images=include_images)
 
 
 def _load_scripts(
@@ -284,6 +288,11 @@ def _add_runtime_arguments(
     action="append",
     default=[],
     help=f"Path to a JavaScript file to run before {help_context}; may be specified multiple times",
+  )
+  parser.add_argument(
+    "--no-images",
+    action="store_true",
+    help="Omit images, alt text, and figcaption captions in text and TUI normal views",
   )
   parser.add_argument(
     "--no-script-cache",

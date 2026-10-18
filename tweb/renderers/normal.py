@@ -139,6 +139,7 @@ class RenderState:
   style_context: StyleContext | None = None
   max_blocks: int | None = None
   include_controls: bool = True
+  include_images: bool = True
   include_control_metadata: bool = True
   truncated: bool = False
   interactive_entries: list[tuple[str, _PendingLinkMetadata | _PendingControlMetadata]] = field(default_factory=list)
@@ -225,6 +226,7 @@ def render_normal(
   session: Any = None,
   *,
   main_only: bool = False,
+  include_images: bool = True,
 ) -> str:
   return render_normal_with_metadata(
     document,
@@ -236,6 +238,7 @@ def render_normal(
     include_controls=True,
     include_control_metadata=True,
     session=session,
+    include_images=include_images,
     main_only=main_only,
   ).text
 
@@ -252,6 +255,7 @@ def render_normal_with_metadata(
   session: Any = None,
   *,
   main_only: bool = False,
+  include_images: bool = True,
 ) -> NormalRenderResult:
   state = _create_render_state(
     document,
@@ -263,6 +267,7 @@ def render_normal_with_metadata(
     include_controls=include_controls,
     include_control_metadata=include_control_metadata,
     session=session,
+    include_images=include_images,
   )
   root = _find_main_content_root(document, state) if main_only else None
   return _render_normal_root(state, root or document.body or document.root, include_title=True)
@@ -279,6 +284,7 @@ def _create_render_state(
   include_controls: bool = True,
   include_control_metadata: bool = True,
   session: Any = None,
+  include_images: bool = True,
 ) -> RenderState:
   lightweight_style_only = _should_use_lightweight_style_render(document)
   return RenderState(
@@ -293,6 +299,7 @@ def _create_render_state(
     ),
     max_blocks=max_blocks,
     include_controls=include_controls,
+    include_images=include_images,
     include_control_metadata=include_control_metadata,
     lightweight_style_only=lightweight_style_only,
   )
@@ -515,6 +522,7 @@ def render_normal_subtree(
   include_controls: bool = True,
   include_control_metadata: bool = True,
   session: Any = None,
+  include_images: bool = True,
 ) -> str:
   return render_normal_subtree_with_metadata(
     document,
@@ -528,6 +536,7 @@ def render_normal_subtree(
     include_controls=include_controls,
     include_control_metadata=include_control_metadata,
     session=session,
+    include_images=include_images,
   ).text
 
 
@@ -544,6 +553,7 @@ def render_normal_subtree_with_metadata(
   include_controls: bool = True,
   include_control_metadata: bool = True,
   session: Any = None,
+  include_images: bool = True,
 ) -> NormalRenderResult:
   state = _create_render_state(
     document,
@@ -555,6 +565,7 @@ def render_normal_subtree_with_metadata(
     include_controls=include_controls,
     include_control_metadata=include_control_metadata,
     session=session,
+    include_images=include_images,
   )
   return _render_normal_root(state, root, include_title=include_title)
 
@@ -687,6 +698,8 @@ def _render_blocks(
   inherited_visible: bool = True,
   properties: StyleProperties | None = None,
 ) -> list[RenderBlock]:
+  if node.tag == "figcaption" and not state.include_images:
+    return []
   if not state.can_append_block():
     state.truncated = True
     return []
@@ -1652,6 +1665,8 @@ def _render_inline(
   inherited_visible: bool = True,
   properties: StyleProperties | None = None,
 ) -> str:
+  if node.tag == "figcaption" and not state.include_images:
+    return ""
   if node.tag in SKIP_TAGS:
     return ""
   if properties is None:
@@ -1699,6 +1714,8 @@ def _render_inline(
     return state.annotate_link(text or href, href)
 
   if node.tag == "img":
+    if not state.include_images:
+      return ""
     label = _image_label(node)
     return _image_token(label)
 
@@ -1824,7 +1841,7 @@ def _render_inline(
     if not label:
       label = _accessible_label(node)
     if not label:
-      label = _descendant_accessible_label(node)
+      label = _descendant_accessible_label(node, include_images=state.include_images)
     text = _apply_inline_emphasis(_interaction_button_token(label), properties, state.text_styles)
     return state.annotate_control(
       text,
@@ -1913,6 +1930,8 @@ def _render_preformatted(
   state: RenderState,
   inherited_visible: bool = True,
 ) -> str:
+  if node.tag == "figcaption" and not state.include_images:
+    return ""
   parts: list[str] = []
   for child in node.children:
     if isinstance(child, TextNode):
@@ -1976,14 +1995,16 @@ def _accessible_label(
   return ""
 
 
-def _descendant_accessible_label(node: ElementNode) -> str:
+def _descendant_accessible_label(node: ElementNode, *, include_images: bool = True) -> str:
   for child in node.children:
     if not isinstance(child, ElementNode):
+      continue
+    if child.tag == "img" and not include_images:
       continue
     label = _accessible_label(child)
     if label:
       return label
-    nested = _descendant_accessible_label(child)
+    nested = _descendant_accessible_label(child, include_images=include_images)
     if nested:
       return nested
   return ""

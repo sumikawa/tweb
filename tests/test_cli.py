@@ -63,6 +63,21 @@ class CliTest(unittest.TestCase):
     self.assertNotIn("[1]", result.stdout)
     self.assertNotIn("https://example.com/docs", result.stdout)
 
+  def test_no_images_extracts_text_with_main_only(self) -> None:
+    target = ROOT / "tests" / "fixtures" / "no_images.html"
+    result = self.run_cli(str(target), "--mode", "text", "--no-images", "--main-only")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertIn("Before after.", result.stdout)
+    self.assertNotIn("Caption", result.stdout)
+    self.assertNotIn("photo", result.stdout)
+    self.assertNotIn("[image]", result.stdout)
+    self.assertNotIn("Navigation", result.stdout)
+
+  @patch("tweb.cli.run_tui_browser", return_value=0)
+  def test_tui_mode_passes_no_images(self, mock_run_tui_browser: Mock) -> None:
+    self.assertEqual(main([str(SAMPLE), "--no-images"]), 0)
+    self.assertFalse(mock_run_tui_browser.call_args.kwargs["include_images"])
+
   def test_normal_mode_defaults_to_welcome_page_when_target_is_omitted(self) -> None:
     result = self.run_cli("--mode", "text")
     self.assertEqual(result.returncode, 0)
@@ -525,6 +540,7 @@ class CliTest(unittest.TestCase):
       button_click_policy="network",
       use_script_cache=True,
       debug_block_colors=False,
+      include_images=True,
     )
 
   @patch("tweb.cli.render_normal", return_value="rendered")

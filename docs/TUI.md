@@ -10,7 +10,7 @@ TUI モードの操作仕様と表示方針をまとめる。
 - 構築時の数値は `BrowserPage.build_timings_ms` にも保持する。pane detection の省略理由は `pane detection skipped reason=lightweight-render|no-layout-candidate` に出る
 - static-rich page は通常レンダラと同じ lightweight 判定で pane detection を省略する。構造走査では hidden / template 内の layout hint を候補にしない
 - `v` では元ページの pane target、source/full-page buffer、pane subtree の text / interactive metadata を再利用する。全体表示への復帰時は元の buffer を使い、リンク・control・block の対応を保持する
-- キャッシュは同一ページ・同一幅での pane 切り替えに限定する。load、DOM 更新後の rerender、resize、background render は作り直す
+- キャッシュは同一ページ・同一幅・同じ画像表示設定での pane 切り替えに限定する。load、DOM 更新後の rerender、resize、background render は作り直す
 - worker のキャンセルをページ構築の段階間で確認する。実行中の単一 render / CSS 処理の強制停止は対象外とする
 
 ## 現在の実装
@@ -106,3 +106,7 @@ TUI モードの操作仕様と表示方針をまとめる。
 - ページ内サーチは現在表示中のレンダリング結果を対象にし、通常表示と DOM 要約表示のどちらでも同じように動かす
 - キーバインドは macOS の標準テキスト編集に近い Emacs 準拠を優先する
 - TUI 詳細は README ではなくこのファイルに集約する
+
+## 画像表示の抑制
+
+`tw URL --no-images` で起動すると、通常表示で画像の `[altテキスト]` / `[image]` を省略します。再描画、ページ移動、ペインの拡大表示でも設定を維持します。`<figcaption>` のキャプションも省略します。本文中の文字のあるリンクは残し、画像だけのリンクは表示しません。DOM 表示では画像要素を引き続き検査できます。
