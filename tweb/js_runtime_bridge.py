@@ -978,7 +978,9 @@ const location = {
   replace(value) { __twebApplyLocation(__twebResolveLocationTarget(value)); },
   toString() { return this.href; },
   valueOf() { return this.href; },
-  reload() {}
+  reload() {
+    __twebRequestReload(__twebLocation.href);
+  }
 };
 window.location = location;
 self.location = location;
@@ -4841,6 +4843,7 @@ const __twebDocumentTarget = {
   },
   set cookie(value) {
     __twebSetCookie(value);
+    __twebPersistCookie(String(value));
   },
   get referrer() {
     return '';

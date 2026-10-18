@@ -114,11 +114,12 @@
 - `Blob` / `File` / `FileReader`
 - `ReadableStream` / `WritableStream` / `TransformStream`
 - `TextEncoder` / `TextDecoder`
-- `document.cookie`
+- `document.cookie`: HTTP(S) 文書での代入を requests session の CookieJar に反映し、domain / path / Secure / 有効期限に従って再取得へ引き継ぐ
 
 #### 周辺 API
 
 - `window` / `location` / `navigator` / `history` / `navigation` / `console`
+- 初期 script / timer の `location.reload()` は実行後に同じ session で GET 再取得し、新しい文書の script を実行する。1 回のページ読み込みにつき再取得は最大 3 回で、上限到達は debug log に記録する。button click の reload は既存の navigation policy に従う
 - `EventTarget` / `Event` / `CustomEvent` / `MouseEvent` / `KeyboardEvent` / `PointerEvent` など主要イベント型
 - `localStorage` / `sessionStorage`
 - `indexedDB` の最小実装
@@ -262,3 +263,9 @@
 - JavaScript 実行結果は通常モード / DOM モード / TUI の表示と整合するように保つ
 - 通信、DOM 更新、遷移の許可境界は曖昧にせず、段階的に分けていく
 - セキュリティ上の制約と実装済み機能の差分は `SECURITY.md` に明示する
+
+## 個別 URL の確認記録
+
+- 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` は、HTTP 307 の JavaScript Cookie challenge が `location.reload()` を要求する。Cookie の session 反映と再読み込み実装により、`--browser-render never --mode text` で再取得が HTTP 200 となり、記事タイトルと本文を表示できた。Chrome fallback は使用していない。
+- 同変更の回帰確認: JavaScript / document API / CLI / TUI の 610 tests 中 609 件成功。`test_augments_note_topic_sections_from_runtime_probe` は失敗したが、作業開始時点の `828d82f` から抽出した変更前コードでも同じ失敗を再現した。今回追加した Cookie / reload / TUI の 6 tests は成功。
+- main の `2fab30f` を統合後、JavaScript / document API / CLI / TUI / 通常描画の回帰テスト 695 件がすべて成功した。

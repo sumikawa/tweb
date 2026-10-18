@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
+from requests import Request
 from requests.cookies import RequestsCookieJar
 
 import tweb.api as api_module
@@ -87,6 +88,59 @@ class DocumentApiTest(unittest.TestCase):
     self._cache_env_patch.stop()
     self._cache_tmpdir.cleanup()
     super().tearDown()
+
+  def test_cookie_challenge_reload_preserves_session_and_replaces_document(self) -> None:
+    source = "https://example.com/news/article"
+    document = TWebDocument(parse_document(Resource(source=source, content="""
+      <html><title>You are being redirected...</title>
+      <script>document.cookie = 'challenge=passed; Path=/; Secure; SameSite=Lax';
+      location.reload();</script></html>
+    """)))
+    session = create_session()
+
+    def fetch(target, *, session):
+      self.assertEqual(target, source)
+      prepared = session.prepare_request(Request("GET", target))
+      self.assertIn("challenge=passed", prepared.headers.get("Cookie", ""))
+      return Resource(source=source, content="<html><title>News</title><body><article>Article loaded</article></body></html>", status_code=200)
+
+    with patch("tweb.api.fetch_resource", side_effect=fetch) as fetch_mock:
+      document.execute_embedded_scripts(session=session, browser_render_policy="never", ignore_errors=False)
+    self.assertEqual(fetch_mock.call_count, 1)
+    self.assertEqual(document.title, "News")
+    self.assertIn("Article loaded", document.body_text())
+    self.assertEqual(document.reloaded_resource.status_code, 200)
+
+  def test_reload_works_without_explicit_session(self) -> None:
+    document = TWebDocument(parse_document(Resource(source="https://example.com/", content="""
+      <html><body>Loading<script>document.cookie = 'ready=1; Path=/'; setTimeout(() => location.reload(), 0);</script></body></html>
+    """)))
+    with patch("tweb.api.fetch_resource", return_value=Resource(
+      source="https://example.com/", content="<html><body>Done</body></html>",
+    )) as fetch_mock:
+      document.execute_embedded_scripts(ignore_errors=False)
+    self.assertEqual(fetch_mock.call_args.kwargs["session"].cookies.get("ready"), "1")
+    self.assertIn("Done", document.body_text())
+
+  def test_reload_loop_is_bounded_and_logged(self) -> None:
+    resource = Resource(source="https://example.com/", content="<html><script>location.reload();</script></html>")
+    document = TWebDocument(parse_document(resource))
+    with patch("tweb.api.fetch_resource", return_value=resource) as fetch_mock, self.assertLogs("tweb", level="DEBUG") as logs:
+      document.execute_embedded_scripts(ignore_errors=False)
+    self.assertEqual(fetch_mock.call_count, 3)
+    self.assertTrue(any("reason=reload-limit" in line for line in logs.output))
+
+  def test_reload_button_respects_dom_only_policy(self) -> None:
+    document = TWebDocument(parse_document(Resource(source="https://example.com/", content="""
+      <html><body><button id="reload" type="button">Reload</button>
+      <script>document.getElementById("reload").addEventListener("click", () => location.reload());</script></body></html>
+    """)))
+    document.execute_embedded_scripts(ignore_errors=False)
+    button = next(control for control in document.form_controls() if control.kind == "button")
+    result = document.click_button_control(button.control_id, policy="dom-only")
+    self.assertTrue(result.blocked_by_policy)
+    self.assertEqual(result.navigation_target, "https://example.com/")
+    self.assertIsNone(document._js_runtime.reload_target)
 
   def test_trusts_only_cross_site_scripts_linked_to_a_stylesheet_asset_tree(self) -> None:
     document = TWebDocument(parse_document(Resource(

@@ -1582,6 +1582,25 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       await pilot.pause()
       self.assertNotIn("Line thirty for scrolling.", app.current_page.rendered)
 
+  async def test_cookie_challenge_reload_updates_tui_resource_and_body(self) -> None:
+    target = "https://example.com/news"
+    challenge = Resource(source=target, status_code=307, content="""
+      <html><title>You are being redirected...</title>
+      <script>document.cookie = 'ready=1; Path=/'; location.reload();</script></html>
+    """)
+    article = Resource(source=target, status_code=200, content="""
+      <html><title>News</title><body><article><h1>Article loaded</h1><p>News body</p></article></body></html>
+    """)
+    app = TwebBrowserApp(target, width=80, browser_render_policy="never")
+    with patch("tweb.tui.fetch_resource", return_value=challenge), patch("tweb.api.fetch_resource", return_value=article):
+      async with app.run_test() as pilot:
+        await pilot.pause()
+        self.assertIsNotNone(app.current_page)
+        self.assertEqual(app.current_page.resource.status_code, 200)
+        self.assertEqual(app.current_page.resource.content, article.content)
+        self.assertIn("Article loaded", app.current_page.rendered)
+        self.assertNotIn("You are being redirected", app.current_page.rendered)
+
   async def test_build_page_reuses_session_for_navigation(self) -> None:
     session = Mock()
     app = TwebBrowserApp(str(TUI_ROOT), width=80, session=session)

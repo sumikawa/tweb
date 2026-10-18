@@ -1709,6 +1709,8 @@ class TwebBrowserApp(App[None]):
         browser_render_policy=self.browser_render_policy,
         use_script_cache=self.use_script_cache,
       )
+    if document.reloaded_resource is not None:
+      resource = document.reloaded_resource
     pending_scripts = scripts or []
     for index, script in enumerate(pending_scripts, start=1):
       if worker.cancelled_event.is_set():
