@@ -52,7 +52,7 @@ tw ./page.html --mode text
 tw https://example.com/article --mode text --main-only
 ```
 
-`--main-only` は `<main>`、`<article>` を優先し、semantic tag がないページでは本文らしい `div` / `section` を推定します。
+`--main-only` は祖先を含む表示状態を確認し、表示可能な `<main>`、`<article>` を優先します。該当する要素がない場合は、表示可能な `div` / `section` から本文を推定します。
 
 DOM / DOM-AI:
 
@@ -109,7 +109,7 @@ make test
 代表的なテスト面:
 
 - `tests/test_cli.py`: CLI オプションと設定ファイル
-- `tests/test_document_api.py`: タイトル、本文、リンク、API 振る舞い
+- `tests/test_document_api.py`: タイトル、本文、リンク、API 振る舞い。note topic の runtime probe テストは Python 側の追加取得をモックし、実サイトの応答に依存させない
 - `tests/test_fetcher.py`: 取得層、Cookie、session
 - `tests/test_normal_renderer.py`: 通常表示レンダラ
 - `tests/test_dom_renderer.py`: DOM / DOM-AI 表示

@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
       "session": session,
     }
     if args.main_only:
-      root = find_main_content_root(document.document)
+      root = find_main_content_root(document.document, width=width, session=session)
       rendered = (
         render_normal_subtree(document.document, root, **render_kwargs)
         if root is not None

@@ -308,14 +308,50 @@ def visible_links_from_render_result(
   return [(_visible_link_text(entry.text, entry.href), entry.href) for entry in result.link_spans]
 
 
-def find_main_content_root(document: DocumentNode) -> ElementNode | None:
+def find_main_content_root(
+  document: DocumentNode,
+  *,
+  width: int = 80,
+  viewport_columns: int | None = None,
+  session: Any = None,
+) -> ElementNode | None:
   body = document.body
   if body is None:
     return None
-  semantic_root = body.find_first("main") or body.find_first("article")
-  if semantic_root is not None:
-    return semantic_root
-  return _find_probable_content_root(body) or body
+  lightweight_style_only = _should_use_lightweight_style_render(document)
+  state = RenderState(
+    document=document,
+    style_context=None if lightweight_style_only else build_style_context(
+      document,
+      viewport_columns=viewport_columns or max(width, 160),
+      session=session,
+    ),
+    lightweight_style_only=lightweight_style_only,
+  )
+  # Walk from the document root so hidden ancestors and skipped subtrees cannot
+  # supply a candidate that becomes visible when rendered on its own.
+  visible_nodes: list[ElementNode] = []
+  pending = [(child, False) for child in reversed(document.children) if isinstance(child, ElementNode)]
+  while pending:
+    node, inside_body = pending.pop()
+    if node.tag in SKIP_TAGS:
+      continue
+    properties = _child_properties(node, state, inherited_visible=True)
+    if properties is not None and not properties.visible:
+      continue
+    inside_body = inside_body or node is body
+    if inside_body:
+      visible_nodes.append(node)
+    pending.extend(
+      (child, inside_body)
+      for child in reversed(node.children)
+      if isinstance(child, ElementNode)
+    )
+  for tag in ("main", "article"):
+    for node in visible_nodes:
+      if node.tag == tag:
+        return node
+  return _find_probable_content_root(visible_nodes) or body
 
 
 _CONTENT_CONTAINER_TAGS = {"div", "section"}
@@ -349,10 +385,10 @@ _CHROME_MARKERS = (
 )
 
 
-def _find_probable_content_root(body: ElementNode) -> ElementNode | None:
+def _find_probable_content_root(nodes: list[ElementNode]) -> ElementNode | None:
   candidates: list[tuple[float, ElementNode]] = []
-  for node in body.iter_descendants():
-    if not isinstance(node, ElementNode) or node.tag not in _CONTENT_CONTAINER_TAGS:
+  for node in nodes:
+    if node.tag not in _CONTENT_CONTAINER_TAGS:
       continue
     score = _content_root_score(node)
     if score is not None:
@@ -676,9 +712,12 @@ def _render_blocks(
     return blocks
 
   if node.tag == "li":
-    if any(isinstance(child, ElementNode) and child.tag in HEADING_TAGS for child in node.children):
+    marker = _list_item_marker(node, state)
+    if (marker != "- " and _single_nested_list_child(node) is None) or any(
+      isinstance(child, ElementNode) and (child.tag in HEADING_TAGS or child.tag == "ol")
+      for child in node.children
+    ):
       blocks = _render_container(node, state, inherited_visible, properties)
-      marker = _list_item_marker(node, state)
       indent = " " * len(marker)
       return [
         replace(
@@ -715,7 +754,7 @@ def _render_blocks(
     blocks = []
     state.append_block(
       blocks,
-      RenderBlock(f"- {text}", kind="list_item", text_align=_text_align_value(properties)),
+      RenderBlock(f"{marker}{text}", kind="list_item", text_align=_text_align_value(properties)),
     )
     return blocks
 
