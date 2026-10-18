@@ -27,7 +27,7 @@ from .fetcher import (
 from .js_runtime import JavaScriptRuntimeError
 from .parser import parse_document
 from .renderers.dom import render_dom
-from .renderers.normal import find_main_content_root, render_normal, render_normal_subtree
+from .renderers.normal import render_normal
 from .tui import run_tui_browser
 
 DEFAULT_TARGET = str(importlib.resources.files("tweb").joinpath("data", "welcome.html"))
@@ -137,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         button_click_policy=args.button_click_policy,
         use_script_cache=not args.no_script_cache,
         debug_block_colors=args.debug_block_colors,
+        include_images=not args.no_images,
       )
 
     document = TWebDocument(parse_document(resource))
@@ -183,17 +184,10 @@ def main(argv: list[str] | None = None) -> int:
       # Text mode is also used for pipes, files, and programmatic consumers.
       # Keep its output plain; the TUI applies presentation styles itself.
       "text_styles": False,
+      "include_images": not args.no_images,
       "session": session,
     }
-    if args.main_only:
-      root = find_main_content_root(document.document, width=width, session=session)
-      rendered = (
-        render_normal_subtree(document.document, root, **render_kwargs)
-        if root is not None
-        else render_normal(document.document, **render_kwargs)
-      )
-    else:
-      rendered = render_normal(document.document, **render_kwargs)
+    rendered = render_normal(document.document, main_only=args.main_only, **render_kwargs)
     print(rendered)
     return 0
   finally:
@@ -210,6 +204,8 @@ def main_from_path(
   mode: str = "text",
   link_style: str = "none",
   main_only: bool = False,
+  *,
+  include_images: bool = True,
 ) -> str:
   if mode == "tui":
     raise ValueError("main_from_path does not support tui mode")
@@ -225,16 +221,7 @@ def main_from_path(
       variant="ai" if mode == "dom-ai" else "summary",
       viewport_columns=160,
     )
-  if main_only:
-    root = find_main_content_root(document.document)
-    if root is not None:
-      return render_normal_subtree(
-        document.document,
-        root,
-        link_style=link_style,
-        text_styles=False,
-      )
-  return render_normal(document.document, link_style=link_style, text_styles=False)
+  return render_normal(document.document, link_style=link_style, text_styles=False, main_only=main_only, include_images=include_images)
 
 
 def _load_scripts(
@@ -301,6 +288,11 @@ def _add_runtime_arguments(
     action="append",
     default=[],
     help=f"Path to a JavaScript file to run before {help_context}; may be specified multiple times",
+  )
+  parser.add_argument(
+    "--no-images",
+    action="store_true",
+    help="Omit images, alt text, and figcaption captions in text and TUI normal views",
   )
   parser.add_argument(
     "--no-script-cache",

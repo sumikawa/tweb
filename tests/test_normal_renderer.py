@@ -302,6 +302,56 @@ class NormalRendererTest(unittest.TestCase):
     assert generic_root is not None
     self.assertEqual(generic_root.attrs.get("class"), "post-content")
 
+  def test_main_only_shares_styles_and_preserves_subtree_metadata(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <html><head><title>Page title</title><style>.off { display:none }</style></head>
+      <body><nav>Navigation</nav><div class="off"><main>Hidden</main></div>
+      <main><h1>Article</h1><a href="https://example.com/">Read more</a>
+      <input id="query" name="query" value="Search"></main></body></html>
+    """))
+    main = find_main_content_root(document)
+    for limit in (None, 1, 3, 5):
+      with self.subTest(max_blocks=limit):
+        expected = render_normal_subtree_with_metadata(document, main, text_styles=False, max_blocks=limit)
+        with patch.object(normal_module, "build_style_context", wraps=normal_module.build_style_context) as build:
+          actual = render_normal_with_metadata(document, text_styles=False, max_blocks=limit, main_only=True)
+        self.assertEqual(actual, expected)
+        build.assert_called_once()
+    self.assertTrue(actual.link_spans)
+    self.assertTrue(actual.control_spans)
+
+  def test_render_styles_are_fresh_after_dom_and_stylesheet_changes(self) -> None:
+    document = parse_document(Resource(source="inline", content=(
+      '<style>#first { display:none }</style><body>'
+      '<main id="first">First</main><main id="second">Second</main></body>'
+    )))
+    self.assertEqual(render_normal(document, main_only=True, text_styles=False), "Second")
+    document.find_first("style").set_text_content('#second { display:none }')
+    self.assertEqual(render_normal(document, main_only=True, text_styles=False), "First")
+    document.find_first("main").attrs["hidden"] = ""
+    self.assertEqual(render_normal(document, main_only=True, text_styles=False), "")
+
+  def test_content_statistics_preserve_recursive_text_and_tag_counts(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <body><div><h1>Title</h1><p> A  <span> B　C </span> D </p>
+        <!-- ignored --><script><p>ignored</p></script><style>p { color:red }</style>
+        <noscript>ignored</noscript><template><p>Template text</p></template>
+        <ul><li>One <a href="/one">Link</a></li></ul><pre>Line one
+Line two</pre>
+        <blockquote><p>Quoted</p></blockquote><div><section>Tail</section></div>
+      </div></body>
+    """))
+    stats = normal_module._collect_content_stats(document.body)
+    for node in document.body.iter_nodes():
+      if not isinstance(node, ElementNode):
+        continue
+      with self.subTest(tag=node.tag):
+        actual = stats[id(node)]
+        self.assertEqual(actual.text_length, len(" ".join(node.text_content().split())))
+        self.assertEqual(actual.blocks, sum(len(node.find_all(tag)) for tag in ("blockquote", "li", "p", "pre")))
+        self.assertEqual(actual.headings, sum(len(node.find_all(tag)) for tag in normal_module.HEADING_TAGS))
+        self.assertEqual(actual.links, len(node.find_all("a")))
+
   def test_main_content_ignores_hidden_candidates_and_ancestors(self) -> None:
     for hidden in (
       '<main hidden>Hidden</main>',
@@ -1981,6 +2031,34 @@ class NormalRendererTest(unittest.TestCase):
 
     self.assertIn("[textarea q]", output)
     self.assertIn("(Google 検索)", output)
+
+  def test_can_omit_images_without_mutating_the_document(self) -> None:
+    document = parse_document(Resource(
+      source="inline",
+      content=(Path(__file__).parent / "fixtures" / "no_images.html").read_text(encoding="utf-8"),
+    ))
+    for main_only in (False, True):
+      with self.subTest(main_only=main_only):
+        result = render_normal_with_metadata(
+          document, include_images=False, text_styles=False, main_only=main_only,
+        )
+        self.assertNotIn("photo", result.text)
+        self.assertNotIn("[image]", result.text)
+        self.assertNotIn("Caption", result.text)
+        self.assertNotIn("Inline caption", result.text)
+        for text in ("Before after.", "Cell", "Code", "Read more"):
+          self.assertIn(text, result.text)
+        self.assertEqual([(link.text, link.href) for link in result.link_spans], [("Read more", "/mixed")])
+        for link in result.link_spans:
+          self.assertEqual(result.text[link.start:link.end], link.text)
+    subtree = render_normal_subtree_with_metadata(
+      document, document.body, include_images=False, text_styles=False,
+    )
+    self.assertNotIn("photo", subtree.text)
+    self.assertNotIn("Caption", subtree.text)
+    self.assertNotIn("Inline caption", subtree.text)
+    self.assertIn("Caption", render_normal(document, text_styles=False))
+    self.assertIn("[Inline photo]", render_normal(document, text_styles=False))
 
   def test_omits_src_values_from_image_labels_without_alt(self) -> None:
     resource = Resource(

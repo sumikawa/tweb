@@ -52,6 +52,23 @@ document = TWebDocument(parse_document(resource))
 print(document.find("h1").text)
 ```
 
+## テキスト描画
+
+```python
+from tweb.renderers.normal import render_normal, render_normal_with_metadata
+
+text = render_normal(document.document, text_styles=False, main_only=True)
+result = render_normal_with_metadata(document.document, text_styles=False, main_only=True)
+```
+
+`main_only=True` は表示可能な本文候補を選び、CSS解析結果をその描画内で共有する。既定はページ全体の描画。`render_normal_with_metadata` はテキストに加え、リンク・フォーム部品の表示位置を返す。
+
+`include_images=False` を指定すると画像の代替表示（alt テキストを含む）と `<figcaption>` のキャプションを省略します。既定は `True` です。`render_normal`、`render_normal_with_metadata` とそれぞれの subtree 版で利用でき、元の DOM は変更しません。
+
+```python
+text = render_normal(document.document, text_styles=False, main_only=True, include_images=False)
+```
+
 ## 取得
 
 `fetch_resource(target, ...)` は URL またはローカルパスから `Resource` を返す。

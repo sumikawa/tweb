@@ -75,6 +75,39 @@ class StyleProperties:
   margin_bottom: str | None = None
 
 
+def style_properties_from_declarations(
+  node: ElementNode,
+  declarations: dict[str, str],
+  inherited_visible: bool = True,
+) -> StyleProperties:
+  hidden_reason = _hidden_reason(
+    node,
+    declarations,
+    inherited_visible=inherited_visible,
+  )
+
+  return StyleProperties(
+    visible=hidden_reason is None,
+    hidden_reason=hidden_reason,
+    display=declarations.get("display"),
+    height=declarations.get("height"),
+    flex_direction=declarations.get("flex-direction"),
+    flex=declarations.get("flex"),
+    flex_basis=declarations.get("flex-basis"),
+    grid_template_columns=declarations.get("grid-template-columns"),
+    width=declarations.get("width"),
+    overflow=declarations.get("overflow"),
+    visibility=declarations.get("visibility"),
+    font_weight=declarations.get("font-weight"),
+    font_style=declarations.get("font-style"),
+    text_decoration=declarations.get("text-decoration"),
+    text_align=declarations.get("text-align"),
+    margin=declarations.get("margin"),
+    margin_top=declarations.get("margin-top"),
+    margin_bottom=declarations.get("margin-bottom"),
+  )
+
+
 @dataclass(frozen=True)
 class CssRule:
   selectors: tuple[str, ...]
@@ -123,32 +156,7 @@ class StyleContext:
       return cached
 
     declarations = self._declarations(node)
-    hidden_reason = _hidden_reason(
-      node,
-      declarations,
-      inherited_visible=inherited_visible,
-    )
-
-    properties = StyleProperties(
-      visible=hidden_reason is None,
-      hidden_reason=hidden_reason,
-      display=declarations.get("display"),
-      height=declarations.get("height"),
-      flex_direction=declarations.get("flex-direction"),
-      flex=declarations.get("flex"),
-      flex_basis=declarations.get("flex-basis"),
-      grid_template_columns=declarations.get("grid-template-columns"),
-      width=declarations.get("width"),
-      overflow=declarations.get("overflow"),
-      visibility=declarations.get("visibility"),
-      font_weight=declarations.get("font-weight"),
-      font_style=declarations.get("font-style"),
-      text_decoration=declarations.get("text-decoration"),
-      text_align=declarations.get("text-align"),
-      margin=declarations.get("margin"),
-      margin_top=declarations.get("margin-top"),
-      margin_bottom=declarations.get("margin-bottom"),
-    )
+    properties = style_properties_from_declarations(node, declarations, inherited_visible)
     self._properties_cache[cache_key] = properties
     return properties
 

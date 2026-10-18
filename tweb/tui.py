@@ -1116,6 +1116,7 @@ class TwebBrowserApp(App[None]):
     button_click_policy: ButtonClickPolicy = "network",
     use_script_cache: bool = True,
     debug_block_colors: bool = False,
+    include_images: bool = True,
     history_path: Path | None = None,
   ) -> None:
     super().__init__()
@@ -1127,6 +1128,7 @@ class TwebBrowserApp(App[None]):
     self.browser_render_policy = browser_render_policy
     self.button_click_policy = button_click_policy
     self.use_script_cache = use_script_cache
+    self.include_images = include_images
     self.debug_block_colors = debug_block_colors
     self.current_page: BrowserPage | None = None
     self.display_mode = "normal"
@@ -2216,6 +2218,7 @@ class TwebBrowserApp(App[None]):
       text_styles=False,
       max_blocks=max_blocks,
       session=self.session,
+      include_images=self.include_images,
     )
     return (
       result.text,
@@ -2954,6 +2957,7 @@ class TwebBrowserApp(App[None]):
           text_styles=False,
           include_title=False,
           session=self.session,
+          include_images=self.include_images,
         )
         display_rendered = subtree_result.text
         display_links = [
@@ -2983,6 +2987,7 @@ class TwebBrowserApp(App[None]):
         list(source_pane_groups),
         width=resolved_width,
         session=self.session,
+        include_images=self.include_images,
       )
     if resolved_pane_focus_target_path is not None:
       buffer = _replace_buffer_block_regions(
@@ -3214,6 +3219,7 @@ class TwebBrowserApp(App[None]):
           text_styles=False,
           include_title=False,
           session=self.session,
+          include_images=self.include_images,
         )
         if normalized_snippet not in _normalize_pane_match_text(rendered):
           continue
@@ -3244,6 +3250,7 @@ class TwebBrowserApp(App[None]):
       line_snippet,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     )
     if deepest_match is None:
       return pane_target.path
@@ -3254,6 +3261,7 @@ class TwebBrowserApp(App[None]):
       line_snippet,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     )
     return _promote_leading_metadata_match_path(
       document.document,
@@ -3263,6 +3271,7 @@ class TwebBrowserApp(App[None]):
       minimum_path=pane_target.path,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     )
 
   def _current_content_focus_target_path(self) -> tuple[int, ...] | None:
@@ -3284,6 +3293,7 @@ class TwebBrowserApp(App[None]):
       line_snippet,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     )
     if deepest_match is None or not deepest_match:
       return None
@@ -3294,6 +3304,7 @@ class TwebBrowserApp(App[None]):
       line_snippet,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     )
     if not promoted_path:
       return None
@@ -3303,6 +3314,7 @@ class TwebBrowserApp(App[None]):
       promoted_path,
       width=self._content_width(),
       session=self.session,
+      include_images=self.include_images,
     ):
       return None
     return promoted_path
@@ -3319,6 +3331,7 @@ def run_tui_browser(
   button_click_policy: ButtonClickPolicy = "network",
   use_script_cache: bool = True,
   debug_block_colors: bool = False,
+  include_images: bool = True,
 ) -> int:
   app = TwebBrowserApp(
     target,
@@ -3331,6 +3344,7 @@ def run_tui_browser(
     use_script_cache=use_script_cache,
     debug_block_colors=debug_block_colors,
     history_path=DEFAULT_HISTORY_PATH,
+    include_images=include_images,
   )
   try:
     app.run()
@@ -3567,6 +3581,7 @@ def _merge_regions_by_pane_target(
   *,
   width: int,
   session: requests.Session | None,
+  include_images: bool = True,
 ) -> RenderedBuffer:
   root = document.body or document.root
   if root is None or not buffer.block_regions:
@@ -3590,6 +3605,7 @@ def _merge_regions_by_pane_target(
         text_styles=False,
         include_title=False,
         session=session,
+        include_images=include_images,
       )
     )
 
@@ -3660,6 +3676,7 @@ def _deepest_matching_descendant_path(
   *,
   width: int,
   session: requests.Session | None,
+  include_images: bool = True,
 ) -> tuple[int, ...] | None:
   normalized_snippet = _normalize_pane_match_text(line_snippet)
   if not normalized_snippet:
@@ -3678,6 +3695,7 @@ def _deepest_matching_descendant_path(
       text_styles=False,
       include_title=False,
       session=session,
+      include_images=include_images,
     )
     normalized_rendered = _normalize_pane_match_text(rendered)
     if normalized_snippet not in normalized_rendered:
@@ -3705,6 +3723,7 @@ def _promote_heading_match_path(
   *,
   width: int,
   session: requests.Session | None,
+  include_images: bool = True,
 ) -> tuple[int, ...]:
   normalized_snippet = _normalize_pane_match_text(line_snippet)
   current_path = path
@@ -3724,6 +3743,7 @@ def _promote_heading_match_path(
         text_styles=False,
         include_title=False,
         session=session,
+        include_images=include_images,
       )
       for sibling in parent.children[current_path[-1] + 1:]
       if isinstance(sibling, ElementNode)
@@ -3738,6 +3758,7 @@ def _promote_heading_match_path(
       text_styles=False,
       include_title=False,
       session=session,
+      include_images=include_images,
     )
     if normalized_snippet not in _normalize_pane_match_text(parent_rendered):
       break
@@ -3754,6 +3775,7 @@ def _promote_leading_metadata_match_path(
   minimum_path: tuple[int, ...] = (),
   width: int,
   session: requests.Session | None,
+  include_images: bool = True,
 ) -> tuple[int, ...]:
   normalized_snippet = _normalize_pane_match_text(line_snippet)
   candidate_path = path
@@ -3784,6 +3806,7 @@ def _promote_leading_metadata_match_path(
         text_styles=False,
         include_title=False,
         session=session,
+        include_images=include_images,
       )
       parent_path = candidate_path[:-1]
       if (
@@ -3838,6 +3861,7 @@ def _path_has_textual_sibling_context(
   *,
   width: int,
   session: requests.Session | None,
+  include_images: bool = True,
 ) -> bool:
   current_path = path
   while current_path:
@@ -3858,6 +3882,7 @@ def _path_has_textual_sibling_context(
         text_styles=False,
         include_title=False,
         session=session,
+        include_images=include_images,
       )
       if _normalize_pane_match_text(rendered):
         return True
