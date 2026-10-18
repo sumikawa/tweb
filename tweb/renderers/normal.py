@@ -142,6 +142,7 @@ class RenderState:
   node_by_id_cache: dict[str, ElementNode] | None = None
   labelledby_targets_cache: dict[str, ElementNode | None] | None = None
   control_metadata_cache: dict[int, tuple[str, str, str] | None] = field(default_factory=dict)
+  list_marker_cache: dict[int, str] | None = None
   lightweight_style_only: bool = False
 
   def can_append_block(self) -> bool:
@@ -675,6 +676,19 @@ def _render_blocks(
     return blocks
 
   if node.tag == "li":
+    if any(isinstance(child, ElementNode) and child.tag in HEADING_TAGS for child in node.children):
+      blocks = _render_container(node, state, inherited_visible, properties)
+      marker = _list_item_marker(node, state)
+      indent = " " * len(marker)
+      return [
+        replace(
+          block,
+          text=(marker if index == 0 else indent) + (
+            re.sub(r"^#{1,6} ", "", block.text) if block.kind == "heading" else block.text
+          ).replace("\n", "\n" + indent),
+        )
+        for index, block in enumerate(blocks)
+      ]
     if compound_block := _render_compound_nested_list_item(
       node,
       state,
@@ -2147,27 +2161,21 @@ def _normalize_text(text: str) -> str:
 def _wrap_block(block: str, width: int) -> str:
   if "\n" in block:
     return "\n".join(_wrap_block(line, width) if line.strip() else "" for line in block.splitlines())
-  if match := re.match(r"^( +)- (.*)$", block):
-    base_indent, content = match.groups()
+  if match := re.match(r"^( *)(- |[+-]?\d+\. )(.*)$", block):
+    base_indent, marker, content = match.groups()
     return _wrap_paragraph(
       content,
       width,
-      initial_indent=f"{base_indent}- ",
-      subsequent_indent=f"{base_indent}  ",
+      initial_indent=base_indent + marker,
+      subsequent_indent=base_indent + " " * len(marker),
     )
-  if block.startswith("- "):
+  if match := re.match(r"^( +)(.*)$", block):
+    indent, content = match.groups()
     return _wrap_paragraph(
-      block[2:],
+      content,
       width,
-      initial_indent="- ",
-      subsequent_indent="  ",
-    )
-  if block.startswith("  "):
-    return _wrap_paragraph(
-      block.strip(),
-      width,
-      initial_indent="  ",
-      subsequent_indent="  ",
+      initial_indent=indent,
+      subsequent_indent=indent,
     )
   if block.startswith("> "):
     return _wrap_paragraph(
@@ -2924,6 +2932,30 @@ def _is_zero_css_length(value: str | None) -> bool:
     return False
   normalized = value.strip().lower()
   return normalized in {"0", "0px", "0rem", "0em", "0%", "0vh", "0vw"}
+
+
+def _list_item_marker(node: ElementNode, state: RenderState) -> str:
+  if state.list_marker_cache is None:
+    state.list_marker_cache = {}
+    for ordered_list in state.document.find_all("ol"):
+      items = [
+        child for child in ordered_list.children
+        if isinstance(child, ElementNode) and child.tag == "li"
+      ]
+      step = -1 if "reversed" in ordered_list.attrs else 1
+      number = len(items) if step == -1 else 1
+      try:
+        number = int(ordered_list.attrs.get("start", str(number)))
+      except ValueError:
+        pass
+      for item in items:
+        try:
+          number = int(item.attrs.get("value", str(number)))
+        except ValueError:
+          pass
+        state.list_marker_cache[id(item)] = f"{number}. "
+        number += step
+  return state.list_marker_cache.get(id(node), "- ")
 
 
 def _is_structural_list_wrapper_item(node: ElementNode) -> bool:

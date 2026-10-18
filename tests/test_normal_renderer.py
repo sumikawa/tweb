@@ -862,6 +862,53 @@ class NormalRendererTest(unittest.TestCase):
     self.assertIn("Line one\nLine two\nLine three", output)
     self.assertNotIn("\n\nLine one", output)
 
+  def test_renders_list_headings_without_stacked_markers(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <ol style="font-size:1.07em;font-weight:bold">
+        <li><h3>Security is built into our organizational structure</h3>
+          <p>At AWS, security is a core function.</p><p>Another paragraph.</p></li>
+        <li><h3>Security is everyone’s job</h3><p>Everyone owns security.</p></li>
+      </ol>
+    """))
+    output = render_normal(document, width=80, text_styles=False)
+    self.assertEqual(output,
+      "1. Security is built into our organizational structure\n\n"
+      "   At AWS, security is a core function.\n\n   Another paragraph.\n\n"
+      "2. Security is everyone’s job\n\n   Everyone owns security.")
+
+  def test_list_heading_preserves_emphasis_links_and_wrapping(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <ol start="10"><li><h3><a href="https://example.com/">A long linked heading for wrapping</a></h3>
+        <p>A long paragraph that wraps across several lines.</p></li></ol>
+    """))
+    result = render_normal_with_metadata(document, width=24)
+    self.assertNotIn("###", result.text)
+    self.assertIn("10. " + ANSI_BOLD, result.text)
+    lines = ANSI_ESCAPE_RE.sub("", result.text).splitlines()
+    self.assertTrue(all(line.startswith("    ") for line in lines[1:] if line))
+    self.assertTrue(all(_display_width(line) <= 24 for line in lines))
+    self.assertTrue(result.link_spans)
+    self.assertTrue(all(link.href == "https://example.com/" for link in result.link_spans))
+    self.assertEqual(" ".join(" ".join(result.text[link.start:link.end] for link in result.link_spans).split()),
+      "A long linked heading for wrapping")
+
+  def test_heading_list_numbers_respect_html_counters_and_hidden_items(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <ol reversed start="8">
+        <li hidden><h3>Hidden</h3></li>
+        <li><h3>Seven</h3></li>
+        <li value="3"><h3>Three</h3><ul><li><h4>Nested</h4><p>Body</p></li></ul></li>
+        <li><h3>Two</h3></li>
+      </ol>
+    """))
+    output = render_normal(document, width=80, text_styles=False)
+    self.assertNotIn("Hidden", output)
+    for expected in ("7. Seven", "3. Three", "2. Two", "   - Nested", "     Body"):
+      self.assertIn(expected, output)
+    limited = render_normal(document, width=80, text_styles=False, max_blocks=1)
+    self.assertIn("7. Seven", limited)
+    self.assertNotIn("Three", limited)
+
   def test_renders_structural_reply_wrappers_as_indented_nested_list_items(self) -> None:
     resource = Resource(
       source="inline",
