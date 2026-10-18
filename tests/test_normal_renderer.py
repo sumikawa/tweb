@@ -2032,6 +2032,34 @@ Line two</pre>
     self.assertIn("[textarea q]", output)
     self.assertIn("(Google 検索)", output)
 
+  def test_can_omit_images_without_mutating_the_document(self) -> None:
+    document = parse_document(Resource(
+      source="inline",
+      content=(Path(__file__).parent / "fixtures" / "no_images.html").read_text(encoding="utf-8"),
+    ))
+    for main_only in (False, True):
+      with self.subTest(main_only=main_only):
+        result = render_normal_with_metadata(
+          document, include_images=False, text_styles=False, main_only=main_only,
+        )
+        self.assertNotIn("photo", result.text)
+        self.assertNotIn("[image]", result.text)
+        self.assertNotIn("Caption", result.text)
+        self.assertNotIn("Inline caption", result.text)
+        for text in ("Before after.", "Cell", "Code", "Read more"):
+          self.assertIn(text, result.text)
+        self.assertEqual([(link.text, link.href) for link in result.link_spans], [("Read more", "/mixed")])
+        for link in result.link_spans:
+          self.assertEqual(result.text[link.start:link.end], link.text)
+    subtree = render_normal_subtree_with_metadata(
+      document, document.body, include_images=False, text_styles=False,
+    )
+    self.assertNotIn("photo", subtree.text)
+    self.assertNotIn("Caption", subtree.text)
+    self.assertNotIn("Inline caption", subtree.text)
+    self.assertIn("Caption", render_normal(document, text_styles=False))
+    self.assertIn("[Inline photo]", render_normal(document, text_styles=False))
+
   def test_omits_src_values_from_image_labels_without_alt(self) -> None:
     resource = Resource(
       source="inline",

@@ -973,6 +973,25 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       title = app.query_one("#content-title", Label)
       self.assertEqual(str(title.render()), "TUI Root [Chrome manual retry]")
 
+  async def test_no_images_survives_rerender_and_pane_focus(self) -> None:
+    target = Path(__file__).parent / "fixtures" / "no_images.html"
+    app = TwebBrowserApp(str(target), width=80, include_images=False)
+    async with app.run_test() as pilot:
+      await pilot.pause()
+      self.assertNotIn("photo", app.current_page.rendered)
+      self.assertNotIn("[image]", app.current_page.rendered)
+      self.assertNotIn("Caption", app.current_page.rendered)
+      app._render_current_page()
+      self.assertNotIn("photo", app.current_page.rendered)
+      # Focus the main subtree, using the same path used by pane navigation.
+      root = app.current_page.document.document.body
+      main_index = next(i for i, node in enumerate(root.children) if getattr(node, "tag", None) == "main")
+      app.pane_focus_target_path = (main_index,)
+      app._render_current_page()
+      self.assertNotIn("photo", app.current_page.rendered)
+      self.assertNotIn("Caption", app.current_page.rendered)
+      self.assertEqual([link.href for link in app.current_page.links], ["/mixed"])
+
   async def test_tui_render_matches_normal_mode_without_links(self) -> None:
     app = TwebBrowserApp(str(CSS_EXTERNAL_GRID), width=30)
 
@@ -3316,6 +3335,7 @@ class TuiCliWidthTest(unittest.TestCase):
       button_click_policy="network",
       use_script_cache=True,
       debug_block_colors=False,
+      include_images=True,
       history_path=Path("~/.config/tw/history.json").expanduser(),
     )
     mock_app.run.assert_called_once_with()

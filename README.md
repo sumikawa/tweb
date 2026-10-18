@@ -64,6 +64,12 @@ tw https://example.com --mode dom-ai
 `--width` を省略した場合は現在のターミナル幅を使い、取得できない場合は `80` を使います。`--link-style` の既定値は `none` です。
 `--main-only` を付けると `text` モードでは表示可能な `<main>`、`<article>` を優先し、該当する要素がないページでは本文らしいコンテナを推定して描画します。非表示の祖先内や `template` 内の要素は候補に含めません。候補が見つからない場合は `<body>` 全体に戻ります。
 
+テキストだけを抽出し、画像の `[altテキスト]` / `[image]` 表示を省くには `--no-images` を付けます。`<figcaption>` のキャプションも省略します。本文中のテキストや文字のあるリンクは残ります。画像だけのリンクは表示から除かれます。TUI の通常表示にも適用され、DOM / DOM-AI の検査表示には影響しません。ページ取得や JavaScript の実行を止めるオプションではありません。
+
+```bash
+tw https://example.com/article --mode text --main-only --no-images
+```
+
 ## よく使うオプション
 
 Cookie を付ける:
