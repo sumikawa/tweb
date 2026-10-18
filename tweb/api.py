@@ -57,7 +57,6 @@ from .parser import parse_document
 from .js_runtime_helpers import JavaScriptRuntimeError, _should_reset_runtime_after_js_error
 from .runtime_data import HYDRATION_ROOT_NAMES, RuntimeDataDebugInfo, collect_runtime_data
 from .site_specific import extract_hydration_sections as _extract_site_specific_hydration_sections_impl
-from .site_specific import is_kakuyomu_episode_url
 
 SELECTOR_TOKEN_RE = re.compile(
   r"^(?P<tag>[a-zA-Z_][a-zA-Z0-9_-]*)?"
@@ -2832,7 +2831,7 @@ def _augment_sparse_body_from_hydration(
     and len(body_text) > 160
     and not _looks_like_client_script_failure(body_text)
   )
-  fast_path_debug = _maybe_apply_site_specific_hydration_fast_path(
+  fast_path_debug = _maybe_apply_disclosure_hydration_fast_path(
     document,
     runtime_sections=runtime_sections,
     body_was_substantial=body_has_substantial_content,
@@ -2967,9 +2966,9 @@ def _augment_sparse_body_from_hydration(
   else:
     values, links, sections = result.texts, result.links, result.sections
     debug = result.debug
-  if runtime_sections:
+  if sections:
     helper_started_at = _safe_perf_counter()
-    populated_titles = populate_disclosure_sections(document, runtime_sections)
+    populated_titles = populate_disclosure_sections(document, sections)
     if perf_timings is not None:
       _record_timing(perf_timings, "augment_populate_disclosure_sections", helper_started_at)
     if populated_titles:
@@ -3140,20 +3139,20 @@ def _augment_sparse_body_from_hydration(
   return debug
 
 
-def _maybe_apply_site_specific_hydration_fast_path(
+def _maybe_apply_disclosure_hydration_fast_path(
   document: DocumentNode,
   *,
   runtime_sections: list[HydrationSection] | None,
   body_was_substantial: bool,
 ) -> RuntimeDataDebugInfo | None:
-  if not body_was_substantial:
+  if not body_was_substantial or not runtime_sections:
     return None
-  if not is_kakuyomu_episode_url(document.source):
+  populated_titles = populate_disclosure_sections(document, runtime_sections)
+  if not all(section.title in populated_titles for section in runtime_sections):
     return None
-  populated_titles = populate_disclosure_sections(document, runtime_sections or [])
   return RuntimeDataDebugInfo(
     confidence="high",
-    fallback_reason="body-already-readable-kakuyomu-episode",
+    fallback_reason="body-already-readable-with-disclosure-sections",
     source_summaries=(),
     used_site_specific_fallback=bool(populated_titles),
     body_was_substantial=True,

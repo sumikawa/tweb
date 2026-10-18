@@ -2556,7 +2556,7 @@ class DocumentApiTest(unittest.TestCase):
     debug = _augment_sparse_body_from_hydration(wrapped.document, FakeRuntime())
 
     self.assertIsNotNone(debug)
-    self.assertEqual(debug.fallback_reason, "body-already-readable-kakuyomu-episode")
+    self.assertEqual(debug.fallback_reason, "body-already-readable-with-disclosure-sections")
     self.assertTrue(debug.used_site_specific_fallback)
     mock_collect_runtime_data.assert_not_called()
     content = wrapped.find("div", attrs={"class": "WorkTocAccordion_contents__6nJhY"})
@@ -2564,7 +2564,7 @@ class DocumentApiTest(unittest.TestCase):
     self.assertIn("第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化", content.get_text())
 
   @patch("tweb.api.collect_runtime_data")
-  def test_kakuyomu_episode_skips_generic_runtime_collector_when_body_is_already_readable(
+  def test_readable_page_without_runtime_hints_skips_generic_runtime_collector(
     self,
     mock_collect_runtime_data: Mock,
   ) -> None:
@@ -2583,7 +2583,7 @@ class DocumentApiTest(unittest.TestCase):
                 <article>
                   <h1>本文見出し</h1>
                   <p>
-                    これは本文がすでに十分読めているケースで、episode ページ向け fast path だけで
+                    これは本文がすでに十分読めているケースで、runtime hint が存在しないときに
                     hydration の generic collector を省けることを確認するテストです。
                   </p>
                   <p>
@@ -2603,7 +2603,7 @@ class DocumentApiTest(unittest.TestCase):
     debug = _augment_sparse_body_from_hydration(wrapped.document, FakeRuntime())
 
     self.assertIsNotNone(debug)
-    self.assertEqual(debug.fallback_reason, "body-already-readable-kakuyomu-episode")
+    self.assertEqual(debug.fallback_reason, "body-already-readable-without-runtime-hints")
     self.assertFalse(debug.used_site_specific_fallback)
     mock_collect_runtime_data.assert_not_called()
 
