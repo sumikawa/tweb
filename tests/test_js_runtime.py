@@ -4437,6 +4437,22 @@ class JsRuntimeTest(unittest.TestCase):
 
     self.assertEqual(result, "guest_id=v1%3A123; lang=en")
 
+  def test_document_cookie_persists_scoped_cookies_in_http_session(self) -> None:
+    session = Session()
+    document = TWebDocument(parse_document(Resource(source="https://example.com/news/article", content="<html></html>")))
+    document.execute_script("""
+      document.cookie = 'challenge=ok; Path=/news; Secure';
+      document.cookie = 'foreign=bad; Domain=other.example';
+    """, session=session)
+    self.assertEqual(session.cookies.get("challenge"), "ok")
+    self.assertIsNone(session.cookies.get("foreign"))
+    from requests import Request
+    self.assertIn("challenge=ok", session.prepare_request(Request("GET", "https://example.com/news/next")).headers.get("Cookie", ""))
+    for target in ["https://example.com/elsewhere", "https://other.example/news/", "http://example.com/news/"]:
+      self.assertNotIn("challenge=ok", session.prepare_request(Request("GET", target)).headers.get("Cookie", ""))
+    document.execute_script("document.cookie = 'challenge=; Path=/news; Max-Age=0';", session=session)
+    self.assertIsNone(session.cookies.get("challenge"))
+
   def test_seeds_document_cookie_from_session(self) -> None:
     session = Session()
     session.cookies.set("guest_id", "v1%3A123", domain="x.com", path="/")

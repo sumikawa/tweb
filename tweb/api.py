@@ -20,6 +20,7 @@ from .fetcher import (
   BrowserRenderRequest,
   BrowserRenderResult,
   Resource,
+  create_session,
   create_persistent_session_pool,
   fetch_rendered_resource,
   fetch_resource,
@@ -390,6 +391,7 @@ class TWebDocument:
 
   def __post_init__(self) -> None:
     self._js_runtime = None
+    self.reloaded_resource: Resource | None = None
     self._last_runtime_data_debug: RuntimeDataDebugInfo | None = None
     self._last_javascript_debug: dict[str, object] | None = None
     register_parents_for_interactions(self.document)
@@ -575,6 +577,46 @@ class TWebDocument:
     browser_render_policy: BrowserRenderPolicy = "never",
     browser_render_fetcher: BrowserRenderFetcher | None = None,
     use_script_cache: bool = True,
+  ) -> None:
+    # Reloading must preserve HTTP cookies and remain bounded even if a server
+    # keeps returning the same JavaScript challenge.
+    self.reloaded_resource = None
+    for reload_count in range(4):
+      self._execute_embedded_scripts_once(
+        ignore_errors=ignore_errors,
+        session=session,
+        browser_render_policy=browser_render_policy,
+        browser_render_fetcher=browser_render_fetcher,
+        use_script_cache=use_script_cache,
+      )
+      target = getattr(self._js_runtime, "reload_target", None)
+      if target is None or self.browser_rendered_via_chrome:
+        return
+      if urlparse(target).scheme not in {"http", "https"}:
+        LOGGER.debug("javascript reload skipped source=%s reason=non-http-target", sanitize_url_for_log(target))
+        return
+      if reload_count == 3:
+        LOGGER.debug("javascript reload stopped source=%s reason=reload-limit limit=3", sanitize_url_for_log(target))
+        return
+      LOGGER.debug("javascript reload source=%s attempt=%d", sanitize_url_for_log(target), reload_count + 1)
+      if session is None:
+        session = create_session()
+        self._js_runtime.sync_document_cookies(session)
+      resource = fetch_resource(target, session=session)
+      self.document = parse_document(resource)
+      self._js_runtime = None
+      self.reloaded_resource = resource
+      register_parents_for_interactions(self.document)
+      sync_interactive_document(self.document)
+
+  def _execute_embedded_scripts_once(
+    self,
+    *,
+    ignore_errors: bool,
+    session,
+    browser_render_policy: BrowserRenderPolicy,
+    browser_render_fetcher: BrowserRenderFetcher | None,
+    use_script_cache: bool,
   ) -> None:
     from .js_runtime import JavaScriptRuntimeError, PAGE_EVENT_TIME_LIMIT_SECONDS
 
@@ -4440,6 +4482,12 @@ def _maybe_replace_with_browser_rendered_document(
       policy=browser_render_policy,
       reason="policy-never",
       trigger=trigger,
+    )
+    return
+  if browser_render_policy == "auto" and getattr(document._js_runtime, "reload_target", None) is not None:
+    _log_browser_render_decision(
+      document.document.source, "skip", policy=browser_render_policy,
+      reason="javascript-reload-pending", trigger=trigger,
     )
     return
   source = document.document.source

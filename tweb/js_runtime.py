@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import base64
 import html
 import hashlib
+from email.message import Message
 import json
 import logging
 import os
@@ -490,6 +491,8 @@ class QuickJSRuntime:
     self._allow_navigation_requests = True
     self._allow_network_requests = True
     self._navigation_requests = []
+    self.reload_target = None
+    self._document_cookie_assignments: list[str] = []
     self._network_requests = []
     self._style_context_cache = None
     self._selector_query_cache: dict[tuple[str, str, str, int], tuple[str, ...]] = {}
@@ -1087,6 +1090,8 @@ class QuickJSRuntime:
     self._ctx.add_callable("__twebGetComputedStyle", self._get_computed_style_json)
     self._ctx.add_callable("__twebConsoleLog", self._console_log)
     self._ctx.add_callable("__twebCryptoDigest", self._crypto_digest)
+    self._ctx.add_callable("__twebRequestReload", self._request_reload)
+    self._ctx.add_callable("__twebPersistCookie", self._persist_cookie)
     self._ctx.add_callable("__twebAllowNavigation", self._allow_navigation)
     self._ctx.add_callable("__twebRecordNavigationAttempt", self._record_navigation_attempt)
     self._ctx.add_callable("__twebDocumentAppendChild", self._document_append_child)
@@ -2296,6 +2301,33 @@ class QuickJSRuntime:
       payload = []
     prior_sources = [str(entry) for entry in payload] if isinstance(payload, list) else []
     return self.script_preflight_safe(compact, prior_sources=prior_sources)
+
+  def sync_document_cookies(self, session) -> None:
+    self.session = session
+    for value in self._document_cookie_assignments:
+      self._store_document_cookie(value)
+
+  def _persist_cookie(self, value: str) -> None:
+    self._document_cookie_assignments.append(value)
+    self._store_document_cookie(value)
+
+  def _store_document_cookie(self, value: str) -> None:
+    if self.session is None or not isinstance(getattr(self.session, "cookies", None), requests.cookies.RequestsCookieJar):
+      return
+    if urlparse(self.document.source).scheme not in {"http", "https"}:
+      return
+    # CookieJar applies domain/path/Secure/expiry rules to a document's origin.
+    headers = Message()
+    headers.add_header("Set-Cookie", value)
+    request = requests.Request("GET", self.document.source).prepare()
+    self.session.cookies.extract_cookies(
+      requests.cookies.MockResponse(headers), requests.cookies.MockRequest(request),
+    )
+
+  def _request_reload(self, target: str) -> None:
+    self._record_navigation_attempt(target)
+    if self._allow_navigation_requests:
+      self.reload_target = resolve_resource_url(self.document.source, target)
 
   def _allow_navigation(self) -> bool:
     return self._allow_navigation_requests
