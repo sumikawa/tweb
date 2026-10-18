@@ -1420,7 +1420,7 @@ class QuickJSRuntime:
 
     def convert(element: ET.Element) -> ElementNode:
       node = ElementNode(
-        tag=qualified_name(str(element.tag)).lower(),
+        tag=qualified_name(str(element.tag)),
         attrs={qualified_name(str(key)): value for key, value in element.attrib.items()},
       )
       if element.text:

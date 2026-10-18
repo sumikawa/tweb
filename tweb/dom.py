@@ -144,7 +144,13 @@ def _serialize_node(node: ElementNode | TextNode) -> str:
     return f"<!DOCTYPE {escape(name)}>"
   if node.tag == "fragment":
     return "".join(_serialize_node(child) for child in node.children)
-  attrs = "".join(f' {key}="{escape(value, quote=True)}"' for key, value in node.attrs.items())
+  # Attributes use double quotes, so apostrophes remain literal as in browser
+  # outerHTML. Template compilers may treat encoded apostrophes as JS syntax.
+  escaped_attrs = (
+    (key, escape(value, quote=False).replace('"', "&quot;"))
+    for key, value in node.attrs.items()
+  )
+  attrs = "".join(f' {key}="{value}"' for key, value in escaped_attrs)
   if not node.children:
     return f"<{node.tag}{attrs}></{node.tag}>"
   children = "".join(_serialize_node(child) for child in node.children)

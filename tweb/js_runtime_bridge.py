@@ -3047,7 +3047,37 @@ class DOMParser {
       body: { get() { return null; } },
       head: { get() { return null; } },
       nodeType: { get() { return Node.DOCUMENT_NODE; } },
+      nodeName: { get() { return '#document'; } },
+      ownerDocument: { get() { return null; } },
+      parentNode: { get() { return null; } },
+      childNodes: { get() { return __twebCreateNodeList(rootNode ? [rootNode] : []); } },
+      children: { get() { return __twebCreateHTMLCollection(rootNode ? [rootNode] : []); } },
+      firstChild: { get() { return rootNode; } },
+      lastChild: { get() { return rootNode; } },
     });
+    // XML names are case-sensitive, and selector engines inspect nodeName and
+    // ownerDocument to choose XML matching rather than HTML matching.
+    if (rootNode) {
+      const pending = [rootNode];
+      while (pending.length) {
+        const node = pending.pop();
+        Object.defineProperty(node, 'ownerDocument', { value: xmlDocument, configurable: true });
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          Object.defineProperty(node, 'tagName', { value: __twebGetNodeTagName(node.__twebNodeId), configurable: true });
+          Object.defineProperty(node, 'namespaceURI', { value: null, configurable: true });
+        }
+        pending.push(...Array.from(node.childNodes || []));
+      }
+    }
+    // Selector engines create temporary nodes when probing a new document.
+    xmlDocument.createElement = document.createElement.bind(document);
+    xmlDocument.createElementNS = document.createElementNS.bind(document);
+    xmlDocument.createTextNode = document.createTextNode.bind(document);
+    xmlDocument.createComment = document.createComment.bind(document);
+    xmlDocument.createDocumentFragment = document.createDocumentFragment.bind(document);
+    xmlDocument.getElementById = function(id) {
+      return this.querySelector(`#${String(id)}`);
+    };
     xmlDocument.querySelector = function(selector) {
       return rootNode ? rootNode.querySelector(selector) : null;
     };

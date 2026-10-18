@@ -1584,6 +1584,54 @@ class JsRuntimeTest(unittest.TestCase):
       "Public notice|https://example.com/notice|2026-07-19T00:00:00+09:00|Notice",
     )
 
+  def test_xml_document_supports_selector_engine_feature_probes(self) -> None:
+    document = self.load_document()
+    result = document.execute_script("""
+      const xml = new DOMParser().parseFromString('<root><entry id="one">First</entry></root>', 'text/xml');
+      const probe = xml.createElement('fieldset');
+      const fragment = xml.createDocumentFragment();
+      fragment.appendChild(xml.createTextNode('probe'));
+      fragment.appendChild(xml.createComment('marker'));
+      probe.appendChild(fragment);
+      xml.documentElement.appendChild(probe);
+      const entry = xml.getElementById('one');
+      [xml.nodeName, xml.childNodes.length, xml.firstChild === xml.documentElement,
+        xml.lastChild === xml.documentElement, entry.textContent, probe.textContent,
+        probe.lastChild.nodeType, xml.ownerDocument === null, xml.parentNode === null].join('|');
+    """)
+    self.assertEqual(result, '#document|1|true|true|First|probe|8|true|true')
+
+  def test_xml_names_and_owner_document_support_child_filtering(self) -> None:
+    document = self.load_document()
+    result = document.execute_script("""
+      const xml = new DOMParser().parseFromString(
+        '<root><group><entry><entryID>A1</entryID></entry><entry><entryID>B2</entryID></entry></group></root>', 'text/xml');
+      const group = xml.querySelector('root > group');
+      // XML selector engines compare nodeName without HTML's case folding.
+      const entries = Array.from(group.childNodes).filter(node => node.nodeName === 'entry');
+      [entries.length, entries.map(node => node.querySelector('entryID').textContent).join(','),
+        entries.every(node => node.ownerDocument === xml),
+        entries[0].firstChild.nodeName, entries[0].firstChild.firstChild.ownerDocument === xml,
+        xml.documentElement.nodeName, document.documentElement.nodeName].join('|');
+    """)
+    self.assertEqual(result, '2|A1,B2|true|entryID|true|root|HTML')
+
+  def test_outer_html_keeps_single_quoted_template_expressions_executable(self) -> None:
+    document = self.load_document()
+    result = document.execute_script("""
+      const node = document.createElement('section');
+      node.setAttribute('v-if', "status == 'ready'");
+      node.setAttribute('data-label', '"quoted" & <text>');
+      const serialized = node.outerHTML;
+      const expression = serialized.match(/v-if="([^"]*)"/)[1];
+      const evaluate = new Function('status', 'return ' + expression);
+      const roundtrip = document.createElement('div');
+      roundtrip.innerHTML = serialized;
+      [evaluate('ready'), evaluate('pending'), roundtrip.firstChild.getAttribute('data-label'),
+        serialized.includes('&quot;'), serialized.includes('&amp;')].join('|');
+    """)
+    self.assertEqual(result, 'true|false|"quoted" & <text>|true|true')
+
   def test_supports_comment_fragment_clone_and_is_connected(self) -> None:
     document = self.load_document()
 
