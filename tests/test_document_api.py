@@ -1692,7 +1692,8 @@ class DocumentApiTest(unittest.TestCase):
     self.assertNotIn("arn:aws:iam::418295679277", text)
     self.assertIsNotNone(debug)
 
-  def test_augments_note_topic_sections_from_runtime_probe(self) -> None:
+  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
+  def test_augments_note_topic_sections_from_runtime_probe(self, mock_fetch: Mock) -> None:
     class FakeRuntime:
       def eval(self, source: str, drain_timers: bool = False):
         if "return JSON.stringify({ texts, links, sections });" in source:
@@ -1736,6 +1737,7 @@ class DocumentApiTest(unittest.TestCase):
     wrapped = TWebDocument(document)
     text = wrapped.body_text()
     self.assertIn("開発効率化", text)
+    mock_fetch.assert_called_once()
 
   def test_skips_hydration_probe_when_body_is_substantial_without_root_hints(self) -> None:
     class FakeRuntime:

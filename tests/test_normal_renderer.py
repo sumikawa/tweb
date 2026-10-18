@@ -302,6 +302,47 @@ class NormalRendererTest(unittest.TestCase):
     assert generic_root is not None
     self.assertEqual(generic_root.attrs.get("class"), "post-content")
 
+  def test_main_content_ignores_hidden_candidates_and_ancestors(self) -> None:
+    for hidden in (
+      '<main hidden>Hidden</main>',
+      '<div hidden><main>Hidden</main></div>',
+      '<div style="display:none"><main>Hidden</main></div>',
+      '<style>.off { display:none }</style><div class="off"><main>Hidden</main></div>',
+      '<template><main>Hidden</main></template>',
+    ):
+      with self.subTest(hidden=hidden):
+        document = parse_document(Resource(source="inline", content=(
+          '<body>' + hidden + '<main id="actual">Actual content</main></body>'
+        )))
+        root = find_main_content_root(document)
+        self.assertIsNotNone(root)
+        self.assertEqual(root.attrs.get("id"), "actual")
+        output = render_normal_subtree_with_metadata(document, root, text_styles=False).text
+        self.assertEqual(output, "Actual content")
+
+  def test_main_content_falls_back_to_visible_article_or_generic_container(self) -> None:
+    prose = '<h1>Actual heading</h1><p>' + 'Visible article text. ' * 12 + '</p>'
+    for candidate in (
+      '<article id="actual">' + prose + '</article>',
+      '<div id="actual" class="post-content">' + prose + '</div>',
+    ):
+      with self.subTest(candidate=candidate):
+        document = parse_document(Resource(source="inline", content=(
+          '<body><main hidden>Hidden main</main>'
+          '<div hidden class="post-content"><h1>Hidden heading</h1><p>'
+          + 'Hidden text. ' * 100 + '</p></div>' + candidate + '</body>'
+        )))
+        root = find_main_content_root(document)
+        self.assertEqual(root.attrs.get("id"), "actual")
+
+  def test_main_content_uses_render_viewport_for_visibility(self) -> None:
+    document = parse_document(Resource(source="inline", content=(
+      '<style>@media (max-width: 800px) { #desktop { display:none } }</style>'
+      '<body><main id="desktop">Desktop</main><main id="mobile">Mobile</main></body>'
+    )))
+    self.assertEqual(find_main_content_root(document, viewport_columns=80).attrs.get("id"), "mobile")
+    self.assertEqual(find_main_content_root(document, viewport_columns=160).attrs.get("id"), "desktop")
+
   def test_render_normal_subtree_with_metadata_can_skip_control_metadata(self) -> None:
     resource = Resource(
       source="inline",
@@ -861,6 +902,37 @@ class NormalRendererTest(unittest.TestCase):
 
     self.assertIn("Line one\nLine two\nLine three", output)
     self.assertNotIn("\n\nLine one", output)
+
+  def test_ordered_list_mixes_plain_headings_and_nested_items(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <body><ol start="9">
+        <li>First plain item</li>
+        <li><h3>Second heading</h3><p>Body</p>
+          <ol start="4"><li>Nested plain</li><li><h4>Nested heading</h4></li></ol>
+        </li>
+        <li value="20">Last plain item</li>
+      </ol></body>
+    """))
+    output = render_normal(document, width=80, text_styles=False)
+    for expected in ("9. First plain item", "10. Second heading", "    Body",
+                     "    4. Nested plain", "    5. Nested heading", "20. Last plain item"):
+      self.assertIn(expected, output)
+    self.assertNotIn("- ", output)
+
+  def test_plain_ordered_items_respect_reversed_counters_and_wrap(self) -> None:
+    document = parse_document(Resource(source="inline", content="""
+      <body><ol reversed start="12">
+        <li hidden>Hidden</li><li>A long plain item that wraps across multiple lines</li>
+        <li value="4">Four</li><li>Three</li>
+      </ol></body>
+    """))
+    output = render_normal(document, width=24, text_styles=False)
+    self.assertTrue(output.startswith("11. A long plain item"))
+    self.assertIn("4. Four", output)
+    self.assertIn("3. Three", output)
+    self.assertNotIn("Hidden", output)
+    self.assertTrue(all(_display_width(line) <= 24 for line in output.splitlines()))
+    self.assertTrue(output.splitlines()[1].startswith("    "))
 
   def test_renders_list_headings_without_stacked_markers(self) -> None:
     document = parse_document(Resource(source="inline", content="""
