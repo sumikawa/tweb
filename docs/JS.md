@@ -268,3 +268,4 @@
 
 - 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` は、HTTP 307 の JavaScript Cookie challenge が `location.reload()` を要求する。Cookie の session 反映と再読み込み実装により、`--browser-render never --mode text` で再取得が HTTP 200 となり、記事タイトルと本文を表示できた。Chrome fallback は使用していない。
 - 同変更の回帰確認: JavaScript / document API / CLI / TUI の 610 tests 中 609 件成功。`test_augments_note_topic_sections_from_runtime_probe` は失敗したが、作業開始時点の `828d82f` から抽出した変更前コードでも同じ失敗を再現した。今回追加した Cookie / reload / TUI の 6 tests は成功。
+- main の `2fab30f` を統合後、JavaScript / document API / CLI / TUI / 通常描画の回帰テスト 695 件がすべて成功した。
