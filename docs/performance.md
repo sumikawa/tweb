@@ -204,3 +204,14 @@ captcha / challenge / anti-bot 理由で canonical audit から外した、ま�
 ### main 統合時の回帰確認
 
 `b5b5273` の main を統合し、画像省略オプションを pane subtree の描画・キャッシュにも引き継いだ。キャッシュ再利用条件に画像表示設定の一致を追加した。TUI / normal renderer / CLI / JS runtime の **504 tests 成功**に加え、画像表示設定変更時のキャッシュ破棄テスト **1 test 成功**。
+
+## 2026-10-19: Apollo 参照解決の共通化
+
+`1688457` のカクヨム目次抽出と、共通 resolver を使う変更後を、同じ QuickJS runtime 上の合成 Apollo cache で各1回比較した。作品・目次・章・episode entity を生成し、抽出された全項目の一致を確認した。実サイトの HTML 取得、bundle 実行、TUI 描画は含まない。canonical cohort の品質分類と `active_site_ids` は変更していない。
+
+| 合成データ | 変更前 | 変更後 | 抽出結果 |
+| --- | --- | --- | --- |
+| 100 episodes | 0.82ms | 6.55ms | 100件一致 |
+| 1,000 episodes | 5.16ms | 58.34ms | 1,000件一致 |
+
+共通化後は entity ごとの runtime 読出しが増えるため、この抽出単体では遅くなる。cache 全体の転送は避け、対象作品から到達する entity の指定 field だけを読む。深さ・処理量・1 entity の転送文字数を制限する。実サイトの表示品質とページ全体の処理時間は未監査であり、上表から live 性能は判断しない。

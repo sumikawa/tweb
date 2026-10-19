@@ -1,0 +1,21 @@
+{
+  "Work:822139842650897571": {
+    "tableOfContentsV2": [{"__ref": "TableOfContents:1"}]
+  },
+  "TableOfContents:1": {
+    "chapter": {"__ref": "Chapter:1"},
+    "episodeUnions": [
+      {"__ref": "Episode:822139845052603357"},
+      {"__ref": "Episode:822139845892635822"}
+    ]
+  },
+  "Chapter:1": {"title": "逆行転生3年目"},
+  "Episode:822139845052603357": {
+    "id": "822139845052603357",
+    "title": "第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化"
+  },
+  "Episode:822139845892635822": {
+    "id": "822139845892635822",
+    "title": "第32話 8/15(月)〜31(水) 追加調整"
+  }
+}

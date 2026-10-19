@@ -17,6 +17,33 @@ from tweb.runtime_data import (
 
 
 class RuntimeDataTest(unittest.TestCase):
+  def test_collects_sections_from_nested_apollo_references(self) -> None:
+    state = {
+      "ROOT_QUERY": {"catalog": {"__ref": "Catalog:1"}},
+      "Catalog:1": {"title": "Reference guides", "items": [{"__ref": "Guide:1"}, {"__ref": "Guide:2"}]},
+      "Guide:1": {"title": "First guide", "url": "/first"},
+      "Guide:2": {"title": "Second guide", "url": "/second"},
+    }
+    payload = {"props": {"pageProps": {"__APOLLO_STATE__": state}}}
+    for source in ("inline", "window", "window-no-query-root", "network"):
+      with self.subTest(source=source):
+        script = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + '</script>'
+        document = parse_document(Resource(
+          source="https://example.org/catalog",
+          content="<html><body>Loading" + (script if source == "inline" else "") + "</body></html>",
+        ))
+        runtime = QuickJSRuntime(document)
+        if source.startswith("window"):
+          runtime_state = {key: value for key, value in state.items() if key != "ROOT_QUERY"} if source == "window-no-query-root" else state
+          runtime.eval("window.__APOLLO_STATE__ = " + json.dumps(runtime_state))
+        if source == "network":
+          runtime.runtime_data_network_payloads = lambda: [{
+            "url": "https://example.org/api/catalog", "body": json.dumps(payload),
+          }]
+        result = collect_runtime_data(document, runtime, body_was_substantial=False, fallback_reason="test")
+        section = next(section for section in result.sections if section.title == "Reference guides")
+        self.assertEqual(section.items, (("First guide", "/first"), ("Second guide", "/second")))
+
   def test_labels_generic_network_items_from_the_api_path(self) -> None:
     document = parse_document(Resource(
       source="https://example.com/",

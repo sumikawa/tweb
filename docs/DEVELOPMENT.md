@@ -159,6 +159,7 @@ uv run python3 -m tweb.audit --tag en
 - `tweb/js_runtime_bridge.py`: QuickJS 側へ注入する DOM / browser bridge
 - `tweb/api.py`: `TWebDocument` と BeautifulSoup 風 API
 - `tweb/runtime_data.py`: runtime data / hydration collector
+- `tweb/apollo.py`: Apollo normalized cache の共通参照解決と runtime entity の限定読出し
 - `tweb/site_specific.py`: generic collector で吸収しきれない残差
 - `tweb/tui.py`: Textual TUI
 - `tweb/renderers/normal.py`: 通常表示レンダラ

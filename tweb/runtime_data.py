@@ -6,6 +6,7 @@ import json
 import re
 from urllib.parse import quote, unquote, urlparse
 
+from .apollo import expand_apollo_payload
 from .dom import DocumentNode, ElementNode, TextNode
 from .fetcher import Resource
 from .hydration import HydrationLink, HydrationSection, merge_hydration_sections
@@ -153,7 +154,7 @@ def collect_runtime_data(
   }
 
   def merge_payload(source_type: str, source_name: str, payload: object) -> None:
-    normalized_payload = _normalize_runtime_payload(payload)
+    normalized_payload = _normalize_runtime_payload(payload, source_name=source_name)
     payload_texts, payload_links, payload_sections = _collect_payload(
       normalized_payload,
       base_url=base_url,
@@ -597,11 +598,11 @@ def _load_json_payload(raw: str) -> object | None:
     return None
 
 
-def _normalize_runtime_payload(payload: object) -> object:
+def _normalize_runtime_payload(payload: object, *, source_name: str | None = None) -> object:
   expanded = _expand_nuxt_data_payload(payload)
   if expanded is not None:
-    return expanded
-  return payload
+    payload = expanded
+  return expand_apollo_payload(payload, is_apollo_state=source_name == "__APOLLO_STATE__")
 
 
 def _expand_nuxt_data_payload(payload: object) -> object | None:
