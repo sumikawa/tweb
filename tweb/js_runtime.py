@@ -46,6 +46,7 @@ from .js_runtime_helpers import (
   _patch_import_meta,
   _patch_js_module_stack_underflow,
   _rewrite_esm_to_classic,
+  _rewrite_class_static_blocks,
   _rewrite_js_object_literal_methods,
   _safeguard_string_method_receivers,
   _split_top_level_js_items,
@@ -534,6 +535,14 @@ class QuickJSRuntime:
   ):
     started_at = _safe_perf_counter()
     self._stats.increment("eval_calls")
+    rewritten = _rewrite_class_static_blocks(source)
+    if rewritten != source:
+      self._stats.increment("class_static_block_rewrite_scripts")
+      LOGGER.debug(
+        "class static blocks rewritten source=%s chars=%d",
+        sanitize_url_for_log(source_url or self.document.source), len(source),
+      )
+      source = rewritten
     if source_url is not None:
       source = _safeguard_string_method_receivers(source, {"charAt", "toLowerCase"})
       if "import.meta" in source:

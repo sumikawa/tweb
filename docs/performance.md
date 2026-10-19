@@ -215,3 +215,22 @@ captcha / challenge / anti-bot 理由で canonical audit から外した、ま�
 | 1,000 episodes | 5.16ms | 58.34ms | 1,000件一致 |
 
 共通化後は entity ごとの runtime 読出しが増えるため、この抽出単体では遅くなる。cache 全体の転送は避け、対象作品から到達する entity の指定 field だけを読む。深さ・処理量・1 entity の転送文字数を制限する。実サイトの表示品質とページ全体の処理時間は未監査であり、上表から live 性能は判断しない。
+
+## 2026-10-19: note 専用 API 補完と URL 推測の削除
+
+canonical cohort 外の確認。`https://note.com/` と `https://note.com/topic/computer_it` から取得した HTML（それぞれ100,065文字 / 263,055文字）を保持し、`ed98f23` と変更後で同じ HTML を再生した。`browser_render_policy="never"`、ログイン Cookie の取込なし。外部 JS / CSS は通常の取得・cache 経路を使う。
+
+| 対象 | 可視本文文字数 変更前→変更後 | links 総数 変更前→変更後 | 元 HTML の一意なリンクの保持 | 埋込記事タイトルの表示 |
+| --- | --- | --- | --- | --- |
+| note home | 1,694 → 1,970 | 106 → 39 | 27 / 27 | 20 / 20 |
+| note computer_it topic | 3,481 → 2,739 | 139 → 97 | 85 / 85 | 24 / 43 |
+
+一意なリンクは `(label, href)` で照合した。links 総数の減少には、`key` / `urlname` / `engName` からの URL 合成を廃止した分を含む。根拠となる URL を持たない記事はテキスト表示にする。元 HTML のリンクは両ページですべて保持した。topic は汎用の表示件数制限を維持しており、全43件の埋込記事を表示できたという結果ではない。
+
+home の runtime JSON 記録に現れた固定 API 呼出しは6件から0件へ減った。topic も変更後の追加 API 記録は0件。ページが発行する fetch / XHR 自体は有効で、遅延 JSON fetch の回帰テストで共通 collector への回収を確認する。
+
+両ページの bundle で発生した `SyntaxError: invalid property name` は class static block の構文変換で解消し、記録された script error は1件から0件になった。topic は runtime が削除した main を汎用処理で復元し、元の入力 UI も保持した。完全な React mount や、ログイン状態のフィードの再現を確認したものではない。
+
+各1回の全体所要時間は home `4.781 → 11.016s`、topic `2.691 → 4.263s`。外部リソースの通信・cache 条件を固定していないため、性能改善率として扱わない。Chrome 比較・実ターミナルでの視認確認は未実施。canonical cohort の分類・`active_site_ids` は変更していない。
+
+`make test` は864 tests 成功。URL 合成の抑止、一意な DOM anchor の採用、ページ発行の遅延 JSON fetch、URL を持たない Flight 記事の本文回収、main 消失時の復元と新規入力 UI の保持、class static block の初期化順 / private field / `super` / literal 保持を回帰対象に含めた。

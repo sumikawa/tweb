@@ -4,7 +4,7 @@ import ast
 from dataclasses import dataclass
 import json
 import re
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 from .apollo import expand_apollo_payload
 from .dom import DocumentNode, ElementNode, TextNode
@@ -727,11 +727,16 @@ def _find_balanced_json_end(text: str, start: int) -> int | None:
 
 def _existing_document_links(document: DocumentNode) -> dict[str, str]:
   mapping: dict[str, str] = {}
+  ambiguous: set[str] = set()
   for anchor in document.find_all("a"):
     href = anchor.attrs.get("href")
     text = " ".join(anchor.text_content().split())
-    if href and text and text not in mapping:
-      mapping[text] = href
+    if href and text and text not in ambiguous:
+      if text in mapping and mapping[text] != href:
+        ambiguous.add(text)
+        mapping.pop(text)
+      else:
+        mapping[text] = href
   return mapping
 
 
@@ -845,6 +850,9 @@ def _collect_payload(
       )
     if len(normalized_items) < 2:
       return
+    if role is None and not any(href for _text, href in normalized_items):
+      if sum(len(text) >= 24 for text, _href in normalized_items) >= 2:
+        role = "recovered"
     seen_sections.add(key)
     for item_text, item_href in normalized_items:
       if item_href:
@@ -948,7 +956,7 @@ def _collect_payload(
               handled_as_section = True
         if handled_as_section:
           continue
-        if child_key not in {"id", "uuid", "key"}:
+        if child_key not in {"id", "uuid", "key", "className", "class", "style", "__typename"}:
           visit(entry, depth + 1, str(child_key))
       return
     if isinstance(value, list):
@@ -1157,7 +1165,7 @@ def _section_items_from_nested_entry_lists(
 
 def _label_for(value: dict[object, object], normalize_text=None) -> str:
   normalize_text = normalize_text or _normalize_text
-  for key in ("title", "name", "label", "text", "headline", "displayName", "message", "description"):
+  for key in ("title", "name", "label", "labelName", "label_name", "text", "headline", "displayName", "nickname", "message", "description"):
     if key in value:
       normalized = normalize_text(value.get(key))
       if normalized:
@@ -1182,8 +1190,10 @@ def _derive_href(
     or value.get("url")
     or value.get("link")
     or value.get("path")
+    or value.get("pathname")
     or value.get("noteUrl")
     or value.get("externalUrl")
+    or value.get("external_url")
   )
   resolved_direct = resolve_href(direct, base_url=base_url)
   if resolved_direct:
@@ -1191,28 +1201,7 @@ def _derive_href(
   label = label if label is not None else _label_for(value, normalize_text=normalize_text)
   if label and label in existing_links:
     return resolve_href(existing_links[label], base_url=base_url)
-  user = value.get("user") if isinstance(value.get("user"), dict) else {}
-  author = value.get("author") if isinstance(value.get("author"), dict) else {}
-  urlname = normalize_text(
-    value.get("urlname")
-    or value.get("userUrlname")
-    or user.get("urlname")
-    or author.get("urlname")
-  )
-  key = normalize_text(value.get("key") or value.get("noteKey") or "")
-  eng_name = normalize_text(value.get("engName") or "")
-  parent_dir = normalize_text(value.get("parentDir") or "")
-  slug = normalize_text(value.get("slug") or value.get("pathname") or "")
-  if urlname and key and re.fullmatch(r"n[a-z0-9]+", key, re.IGNORECASE):
-    return f"/{_encoded_path(urlname)}/n/{_encoded_path(key)}"
-  if parent_dir and eng_name:
-    return f"/{_encoded_path(parent_dir)}/{_encoded_path(eng_name)}"
-  if key_hint == "subCategories" and eng_name:
-    return f"/topic/{_encoded_path(eng_name)}"
-  if slug:
-    if not slug.startswith("/"):
-      slug = f"/{slug}"
-    return slug
+
   return None
 
 
@@ -1242,30 +1231,22 @@ def _section_title_from_key(key_hint: str) -> str:
 
 def _role_hint(key_hint: str | None, parent_hint: str | None) -> str | None:
   hints = " ".join(part for part in [key_hint or "", parent_hint or ""]).lower()
-  if any(token in hints for token in ("nav", "menu", "category", "topic", "sidebar", "toc")):
+  if any(token in hints for token in ("nav", "menu", "category", "categories", "topic", "sidebar", "toc")):
     return "nav"
   return None
 
 
 def _looks_like_section_item_list(key_hint: str, entries: list[object]) -> bool:
-  lowered = key_hint.lower()
-  if lowered in {"notes", "items", "target", "articles", "entries"}:
+  if key_hint.lower() in {"notes", "items", "target", "articles", "entries", "results", "records"}:
     return True
-  return any(_looks_like_note_entry(entry) for entry in entries[:8] if isinstance(entry, dict))
-
-
-def _looks_like_note_entry(entry: dict[object, object]) -> bool:
-  note_type = _normalize_text(entry.get("type") or entry.get("__typename") or entry.get("kind") or "")
-  key = _normalize_text(entry.get("key") or entry.get("noteKey") or "")
-  has_label = bool(_label_for(entry))
-  if has_label and key and re.fullmatch(r"n[a-z0-9]+", key, re.IGNORECASE):
-    return True
-  return has_label and "note" in note_type.lower()
+  return sum(bool(_label_for(entry)) for entry in entries[:8] if isinstance(entry, dict)) >= 2
 
 
 def _normalize_text(value: object) -> str:
   normalized = re.sub(r"\s+", " ", str(value or "")).strip()
   if not normalized:
+    return ""
+  if re.match(r"^\$[A-Za-z0-9]+:(?:props|children|\d+)(?::|$)", normalized):
     return ""
   if len(normalized) > 240:
     return ""
@@ -1416,10 +1397,6 @@ def _iter_embedded_html_paths(
 
 def _contains_cjk(text: str) -> bool:
   return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff]", text))
-
-
-def _encoded_path(value: str) -> str:
-  return "/".join(quote(part, safe="") for part in value.split("/") if part)
 
 
 def _dedupe_texts(values: list[str]) -> list[str]:

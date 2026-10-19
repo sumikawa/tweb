@@ -56,8 +56,6 @@ from tweb.parser import parse_document
 from tweb.renderers.normal import render_normal, render_normal_with_metadata
 from tweb.runtime_data import _collect_payload, _expand_nuxt_data_payload
 from tweb.site_specific import _extract_kakuyomu_toc_sections
-from tweb.site_specific import _extract_note_home_runtime_sections
-from tweb.site_specific import _extract_note_topic_runtime_sections
 from tweb.site_specific import extract_hydration_sections
 
 
@@ -493,336 +491,6 @@ class DocumentApiTest(unittest.TestCase):
     self.assertIn(("国立国会図書館サーチ", "/search"), {(link.text, link.href) for link in links})
     self.assertIn(("デジタルコレクション", "/digital"), {(link.text, link.href) for link in links})
 
-  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
-  def test_extracts_note_home_runtime_sections(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteHomeSections"] || \'[]\'' in source:
-          return self.probe
-        if 'window["__twebNoteHomeSections"] = JSON.stringify(sections);' in source:
-          self.probe = json.dumps(
-            [
-              {
-                "title": "フォロー中",
-                "items": [
-                  {"text": "First Note", "href": "/creator/n/n111"},
-                  {"text": "Second Note", "href": "/creator/n/n222"},
-                ],
-              },
-            ]
-          )
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    sections = extract_hydration_sections(
-      FakeRuntime(),
-      "https://note.com/",
-    )
-
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "フォロー中")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/n111"), ("Second Note", "/creator/n/n222")),
-    )
-    mock_fetch_resource.assert_called_once()
-
-  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
-  def test_extracts_note_home_runtime_sections_after_pending_probe(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "__tweb_pending__"
-        self.drain_calls = 0
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteHomeSections"] = ' in source:
-          self.probe = "__tweb_pending__"
-          return None
-        if 'window["__twebNoteHomeSections"] || \'[]\'' in source:
-          return self.probe
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        self.drain_calls += 1
-        if self.drain_calls == 3:
-          self.probe = json.dumps(
-            [
-              {
-                "title": "フォロー中",
-                "items": [
-                  {"text": "First Note", "href": "/creator/n/n111"},
-                  {"text": "Second Note", "href": "/creator/n/n222"},
-                ],
-              },
-            ]
-          )
-
-    runtime = FakeRuntime()
-    sections = extract_hydration_sections(runtime, "https://note.com/")
-
-    self.assertEqual(runtime.drain_calls, 3)
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "フォロー中")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/n111"), ("Second Note", "/creator/n/n222")),
-    )
-    mock_fetch_resource.assert_called_once()
-
-  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
-  def test_retries_note_home_runtime_probe_after_empty_result(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-        self.launches = 0
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteHomeSections"] = ' in source:
-          self.launches += 1
-          if self.launches == 1:
-            self.probe = "[]"
-          else:
-            self.probe = json.dumps(
-              [
-                {
-                  "title": "フォロー中",
-                  "items": [
-                    {"text": "First Note", "href": "/creator/n/n111"},
-                    {"text": "Second Note", "href": "/creator/n/n222"},
-                  ],
-                },
-              ]
-            )
-          return None
-        if 'window["__twebNoteHomeSections"] || \'[]\'' in source:
-          return self.probe
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    runtime = FakeRuntime()
-    sections = extract_hydration_sections(runtime, "https://note.com/")
-
-    self.assertEqual(runtime.launches, 2)
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "フォロー中")
-    mock_fetch_resource.assert_called_once()
-
-  @patch("tweb.site_specific.fetch_resource")
-  def test_falls_back_to_python_fetch_for_note_home_runtime_sections(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-        self.session = object()
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteHomeSections"] = ' in source:
-          self.probe = "[]"
-          return None
-        if 'window["__twebNoteHomeSections"] || \'[]\'' in source:
-          return self.probe
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    mock_fetch_resource.return_value = Resource(
-      source="https://note.com/api/v3/mkit_layouts/json?context=home_tl&page=1",
-      content=json.dumps(
-        {
-          "data": {
-            "sections": [
-              {
-                "label_name": "フォロー中",
-                "notes": [
-                  {
-                    "title": "First Note",
-                    "key": "naaa111",
-                    "user": {"urlname": "creator"},
-                  },
-                  {
-                    "title": "Second Note",
-                    "key": "nbbb222",
-                    "user": {"urlname": "creator"},
-                  },
-                ],
-              },
-            ],
-          },
-        }
-      ),
-    )
-
-    sections = _extract_note_home_runtime_sections(FakeRuntime(), "https://note.com/")
-
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "フォロー中")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/naaa111"), ("Second Note", "/creator/n/nbbb222")),
-    )
-    mock_fetch_resource.assert_called_once()
-
-  @patch("tweb.site_specific.fetch_resource")
-  def test_falls_back_to_python_fetch_for_note_topic_runtime_sections(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-        self.session = object()
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteTopicSections"] = JSON.stringify(sections);' in source:
-          self.probe = "[]"
-          return None
-        if 'window["__twebNoteTopicSections"] || \'[]\'' in source:
-          return self.probe
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    mock_fetch_resource.return_value = Resource(
-      source="https://note.com/api/v3/mkit_layouts/json?context=category_lifestyle&page=1",
-      content=json.dumps(
-        {
-          "data": {
-            "sections": [
-              {
-                "label_name": "ミニマリズム",
-                "notes": [
-                  {
-                    "name": "First Note",
-                    "key": "naaa111",
-                    "user": {"urlname": "creator"},
-                  },
-                  {
-                    "name": "Second Note",
-                    "key": "nbbb222",
-                    "user": {"urlname": "creator"},
-                  },
-                ],
-              },
-            ],
-          },
-        }
-      ),
-    )
-
-    sections = _extract_note_topic_runtime_sections(FakeRuntime(), "https://note.com/topic/lifestyle")
-
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "ミニマリズム")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/naaa111"), ("Second Note", "/creator/n/nbbb222")),
-    )
-    mock_fetch_resource.assert_called_once_with(
-      "https://note.com/api/v3/mkit_layouts/json?context=category_lifestyle&page=1",
-      session=unittest.mock.ANY,
-    )
-
-  @patch("tweb.site_specific.fetch_resource")
-  def test_falls_back_to_python_fetch_for_nested_note_topic_runtime_sections(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-        self.session = object()
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteTopicSections"] = JSON.stringify(sections);' in source:
-          self.probe = "[]"
-          return None
-        if 'window["__twebNoteTopicSections"] || \'[]\'' in source:
-          return self.probe
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    mock_fetch_resource.return_value = Resource(
-      source="https://note.com/api/v3/mkit_layouts/json?context=category_outdoor_camping&page=1",
-      content=json.dumps(
-        {
-          "data": {
-            "sections": [
-              {
-                "label_name": "キャンプギア",
-                "notes": [
-                  {
-                    "name": "First Note",
-                    "key": "naaa111",
-                    "user": {"urlname": "creator"},
-                  },
-                  {
-                    "name": "Second Note",
-                    "key": "nbbb222",
-                    "user": {"urlname": "creator"},
-                  },
-                ],
-              },
-            ],
-          },
-        }
-      ),
-    )
-
-    sections = _extract_note_topic_runtime_sections(FakeRuntime(), "https://note.com/topic/outdoor/camping")
-
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "キャンプギア")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/naaa111"), ("Second Note", "/creator/n/nbbb222")),
-    )
-    mock_fetch_resource.assert_called_once_with(
-      "https://note.com/api/v3/mkit_layouts/json?context=category_outdoor_camping&page=1",
-      session=unittest.mock.ANY,
-    )
-
-  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
-  def test_extracts_note_topic_runtime_sections(self, mock_fetch_resource) -> None:
-    class FakeRuntime:
-      def __init__(self) -> None:
-        self.probe = "[]"
-
-      def eval(self, source: str, drain_timers: bool = False):
-        if 'window["__twebNoteTopicSections"] || \'[]\'' in source:
-          return self.probe
-        if 'window["__twebNoteTopicSections"] = JSON.stringify(sections);' in source:
-          self.probe = json.dumps(
-            [
-              {
-                "title": "開発効率化",
-                "items": [
-                  {"text": "First Note", "href": "/creator/n/n111"},
-                  {"text": "Second Note", "href": "/creator/n/n222"},
-                ],
-              },
-            ]
-          )
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    sections = _extract_note_topic_runtime_sections(
-      FakeRuntime(),
-      "https://note.com/topic/computer_it",
-    )
-
-    self.assertEqual(len(sections), 1)
-    self.assertEqual(sections[0].title, "開発効率化")
-    self.assertEqual(
-      sections[0].items,
-      (("First Note", "/creator/n/n111"), ("Second Note", "/creator/n/n222")),
-    )
-    mock_fetch_resource.assert_called_once()
 
   def test_extracts_kakuyomu_toc_sections(self) -> None:
     sections = _extract_kakuyomu_toc_sections(
@@ -1712,52 +1380,6 @@ class DocumentApiTest(unittest.TestCase):
     self.assertNotIn("arn:aws:iam::418295679277", text)
     self.assertIsNotNone(debug)
 
-  @patch("tweb.site_specific.fetch_resource", side_effect=FetchError("offline"))
-  def test_augments_note_topic_sections_from_runtime_probe(self, mock_fetch: Mock) -> None:
-    class FakeRuntime:
-      def eval(self, source: str, drain_timers: bool = False):
-        if "return JSON.stringify({ texts, links, sections });" in source:
-          return json.dumps({"texts": [], "links": [], "sections": []})
-        if 'window["__twebNoteTopicSections"] = JSON.stringify(sections);' in source:
-          return None
-        if 'window["__twebNoteTopicSections"] || \'[]\'' in source:
-          return json.dumps(
-            [
-              {
-                "title": "開発効率化",
-                "items": [
-                  {"text": "First Note", "href": "/creator/n/n111"},
-                  {"text": "Second Note", "href": "/creator/n/n222"},
-                ],
-              },
-            ]
-          )
-        return None
-
-      def _drain_async_work(self, *args, **kwargs) -> None:
-        return None
-
-    document = parse_document(
-      Resource(
-        source="https://note.com/topic/computer_it",
-        content="""
-        <html>
-          <body>
-            <a href="#main-content">skip</a>
-            <main id="main-content"></main>
-            <footer>footer</footer>
-          </body>
-        </html>
-        """,
-      )
-    )
-
-    _augment_sparse_body_from_hydration(document, FakeRuntime())
-
-    wrapped = TWebDocument(document)
-    text = wrapped.body_text()
-    self.assertIn("開発効率化", text)
-    mock_fetch.assert_called_once()
 
   def test_skips_hydration_probe_when_body_is_substantial_without_root_hints(self) -> None:
     class FakeRuntime:
@@ -4348,7 +3970,7 @@ class DocumentApiTest(unittest.TestCase):
               <template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING"></template>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":24,\\"title\\":\\"趣味・関心\\",\\"subCategories\\":[{\\"tagName\\":\\"アウトドア\\",\\"title\\":\\"アウトドア\\",\\"engName\\":\\"outdoor\\"},{\\"tagName\\":\\"キャンプ\\",\\"title\\":\\"キャンプ\\",\\"engName\\":\\"outdoor/camping\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":24,\\"title\\":\\"趣味・関心\\",\\"subCategories\\":[{\\"tagName\\":\\"アウトドア\\",\\"title\\":\\"アウトドア\\",\\"engName\\":\\"outdoor\\",\\"href\\":\\"/topic/outdoor\\"},{\\"tagName\\":\\"キャンプ\\",\\"title\\":\\"キャンプ\\",\\"engName\\":\\"outdoor/camping\\",\\"href\\":\\"/topic/outdoor/camping\\"}]}]}]}"]);
               </script>
             </body>
           </html>
@@ -6106,7 +5728,7 @@ class DocumentApiTest(unittest.TestCase):
               </main>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "0:{\\"target\\":[{\\"type\\":\\"TextNote\\",\\"name\\":\\"First Article\\",\\"key\\":\\"naaa111\\",\\"user\\":{\\"urlname\\":\\"creator\\"}},{\\"type\\":\\"TextNote\\",\\"name\\":\\"Second Article\\",\\"key\\":\\"nbbb222\\",\\"user\\":{\\"urlname\\":\\"creator\\"}}]}"]);
+                self.__next_f.push([1, "0:{\\"target\\":[{\\"type\\":\\"TextNote\\",\\"name\\":\\"First Article\\",\\"key\\":\\"naaa111\\",\\"href\\":\\"/creator/n/naaa111\\",\\"user\\":{\\"urlname\\":\\"creator\\"}},{\\"type\\":\\"TextNote\\",\\"name\\":\\"Second Article\\",\\"key\\":\\"nbbb222\\",\\"href\\":\\"/creator/n/nbbb222\\",\\"user\\":{\\"urlname\\":\\"creator\\"}}]}"]);
               </script>
             </body>
           </html>
@@ -6143,6 +5765,7 @@ class DocumentApiTest(unittest.TestCase):
         "type": "TextNote",
         "name": f"Article {index}",
         "key": f"n{index:03d}",
+        "href": f"/creator/n/n{index:03d}",
         "user": {"urlname": "creator"},
       }
       for index in range(30)
@@ -6205,7 +5828,7 @@ class DocumentApiTest(unittest.TestCase):
               </main>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "0:{\\"homeTimeline\\":{\\"sections\\":[{\\"id\\":\\"featured\\",\\"notes\\":[{\\"user\\":{\\"urlname\\":\\"creator\\"},\\"key\\":\\"naaa111\\",\\"title\\":\\"First Article\\",\\"type\\":\\"ImageNote\\"},{\\"title\\":\\"Second Article\\",\\"type\\":\\"TextNote\\",\\"key\\":\\"nbbb222\\",\\"user\\":{\\"urlname\\":\\"creator\\"}}]}],\\"categories\\":[{\\"title\\":\\"くらし\\",\\"subCategories\\":[{\\"title\\":\\"ライフスタイル\\",\\"engName\\":\\"lifestyle\\"},{\\"title\\":\\"住まい・暮らし\\",\\"engName\\":\\"home\\"}]}]}}"]);
+                self.__next_f.push([1, "0:{\\"homeTimeline\\":{\\"sections\\":[{\\"id\\":\\"featured\\",\\"notes\\":[{\\"user\\":{\\"urlname\\":\\"creator\\"},\\"key\\":\\"naaa111\\",\\"href\\":\\"/creator/n/naaa111\\",\\"title\\":\\"First Article\\",\\"type\\":\\"ImageNote\\"},{\\"title\\":\\"Second Article\\",\\"type\\":\\"TextNote\\",\\"key\\":\\"nbbb222\\",\\"href\\":\\"/creator/n/nbbb222\\",\\"user\\":{\\"urlname\\":\\"creator\\"}}]}],\\"categories\\":[{\\"title\\":\\"くらし\\",\\"subCategories\\":[{\\"title\\":\\"ライフスタイル\\",\\"engName\\":\\"lifestyle\\",\\"href\\":\\"/topic/lifestyle\\"},{\\"title\\":\\"住まい・暮らし\\",\\"engName\\":\\"home\\",\\"href\\":\\"/topic/home\\"}]}]}}"]);
                 document.querySelector('main').textContent = 'Something went wrong. Try again.';
               </script>
             </body>
@@ -6241,7 +5864,7 @@ class DocumentApiTest(unittest.TestCase):
               <main id="main-content"></main>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\"},{\\"tagName\\":\\"コンピュータ・IT_プログラミング\\",\\"title\\":\\"プログラミング\\",\\"engName\\":\\"computer_it/programming\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\",\\"href\\":\\"/topic/science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\",\\"href\\":\\"/topic/computer_it\\"},{\\"tagName\\":\\"コンピュータ・IT_プログラミング\\",\\"title\\":\\"プログラミング\\",\\"engName\\":\\"computer_it/programming\\",\\"href\\":\\"/topic/computer_it/programming\\"}]}]}]}"]);
               </script>
             </body>
           </html>
@@ -6367,7 +5990,7 @@ class DocumentApiTest(unittest.TestCase):
               <script>
                 document.querySelector('main').remove();
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\",\\"href\\":\\"/topic/science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\",\\"href\\":\\"/topic/computer_it\\"}]}]}]}"]);
               </script>
             </body>
           </html>
@@ -6406,7 +6029,7 @@ class DocumentApiTest(unittest.TestCase):
               <script>
                 document.querySelector('main').remove();
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\",\\"href\\":\\"/topic/science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\",\\"href\\":\\"/topic/computer_it\\"}]}]}]}"]);
               </script>
             </body>
           </html>
@@ -7164,7 +6787,7 @@ class DocumentApiTest(unittest.TestCase):
               </div>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":3,\\"title\\":\\"テクノロジー\\",\\"subCategories\\":[{\\"tagName\\":\\"科学・テクノロジー\\",\\"title\\":\\"科学・テクノロジー\\",\\"engName\\":\\"science_technology\\",\\"href\\":\\"/topic/science_technology\\"},{\\"tagName\\":\\"コンピュータ・IT\\",\\"title\\":\\"コンピュータ・IT\\",\\"engName\\":\\"computer_it\\",\\"href\\":\\"/topic/computer_it\\"}]}]}]}"]);
                 document.querySelector('main').textContent = 'Something went wrong. Try again.';
               </script>
             </body>
@@ -7225,7 +6848,7 @@ class DocumentApiTest(unittest.TestCase):
               </div>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, '30:["$","$L32",null,{"mobile":["$","$L33",null,{"categories":[{"id":3,"title":"テクノロジー","subCategories":[{"tagName":"科学・テクノロジー","title":"科学・テクノロジー","engName":"science_technology"},{"tagName":"コンピュータ・IT","title":"コンピュータ・IT","engName":"computer_it"}]}]}]}']);
+                self.__next_f.push([1, '30:["$","$L32",null,{"mobile":["$","$L33",null,{"categories":[{"id":3,"title":"テクノロジー","subCategories":[{"tagName":"科学・テクノロジー","title":"科学・テクノロジー","engName":"science_technology","href":"/topic/science_technology"},{"tagName":"コンピュータ・IT","title":"コンピュータ・IT","engName":"computer_it","href":"/topic/computer_it"}]}]}]}']);
                 document.querySelector('main').textContent = 'Something went wrong. Try again.';
               </script>
             </body>
@@ -7321,7 +6944,7 @@ class DocumentApiTest(unittest.TestCase):
               </div>
               <script>
                 self.__next_f = self.__next_f || [];
-                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":24,\\"title\\":\\"趣味・関心\\",\\"subCategories\\":[{\\"tagName\\":\\"アウトドア\\",\\"title\\":\\"アウトドア\\",\\"engName\\":\\"outdoor\\"}]}]}]}"]);
+                self.__next_f.push([1, "30:[\\"$\\",\\"$L32\\",null,{\\"mobile\\":[\\"$\\",\\"$L33\\",null,{\\"categories\\":[{\\"id\\":24,\\"title\\":\\"趣味・関心\\",\\"subCategories\\":[{\\"tagName\\":\\"アウトドア\\",\\"title\\":\\"アウトドア\\",\\"engName\\":\\"outdoor\\",\\"href\\":\\"/topic/outdoor\\"}]}]}]}"]);
                 self.__next_f.push([1, "0:{\\"categories\\":[{\\"title\\":\\"くらし\\"},{\\"title\\":\\"社会・経済\\"},{\\"title\\":\\"テクノロジー\\"},{\\"title\\":\\"エンタメ\\"},{\\"title\\":\\"趣味・関心\\"},{\\"title\\":\\"創作\\"},{\\"title\\":\\"まなび\\"}]}"]);
                 document.querySelector('main').textContent = 'Something went wrong. Try again.';
               </script>

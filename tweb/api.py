@@ -932,7 +932,7 @@ class TWebDocument:
           "duration_ms": round(_elapsed_ms_since(eval_started_at), 3),
         })
     try:
-      note_topic_sections = _extract_site_specific_hydration_sections(runtime, self.document.source)
+      precomputed_sections = _extract_site_specific_hydration_sections(runtime, self.document.source)
     except Exception as exc:
       LOGGER.debug(
         "embedded script pre-dispatch hydration extraction failed source=%s error=%s",
@@ -941,7 +941,7 @@ class TWebDocument:
       )
       if not ignore_errors:
         raise
-      note_topic_sections = []
+      precomputed_sections = []
     had_pre_dispatch_pending_timer = False
     try:
       had_pre_dispatch_pending_timer = runtime.has_pending_timer(max_time_advance_ms=1_000)
@@ -1034,9 +1034,9 @@ class TWebDocument:
         if not ignore_errors:
           raise
     try:
-      note_topic_sections = merge_hydration_sections(
+      precomputed_sections = merge_hydration_sections(
         _extract_site_specific_hydration_sections(runtime, self.document.source),
-        note_topic_sections,
+        precomputed_sections,
       )
     except Exception as exc:
       LOGGER.debug(
@@ -1050,7 +1050,7 @@ class TWebDocument:
       restore_sections = _collect_restore_candidate_sections(
         self.document,
         runtime,
-        site_specific_sections=note_topic_sections,
+        site_specific_sections=precomputed_sections,
       )
       _restore_initial_body_on_client_failure(
         self.document,
@@ -1079,7 +1079,7 @@ class TWebDocument:
       session=session,
       initial_had_main=initial_had_main,
       browser_render_policy=browser_render_policy,
-      runtime_sections=note_topic_sections,
+      runtime_sections=precomputed_sections,
       browser_render_fetcher=browser_render_fetcher or fetch_rendered_resource,
     )
     browser_render_ms = _elapsed_ms_since(browser_render_started_at)
@@ -1091,7 +1091,7 @@ class TWebDocument:
         runtime,
         initial_main_attrs=initial_main_attrs,
         initial_main_ancestor_specs=initial_main_ancestor_specs,
-        extra_sections=note_topic_sections,
+        extra_sections=precomputed_sections,
         perf_timings=python_phase_timings,
       )
       _record_timing(python_phase_timings, "augment_sparse_body_from_hydration", helper_started_at)
@@ -1114,7 +1114,7 @@ class TWebDocument:
             runtime,
             initial_main_attrs=initial_main_attrs,
             initial_main_ancestor_specs=initial_main_ancestor_specs,
-            extra_sections=note_topic_sections,
+            extra_sections=precomputed_sections,
             perf_timings=python_phase_timings,
           )
           _record_timing(python_phase_timings, "augment_sparse_body_from_hydration", helper_started_at)
@@ -2289,6 +2289,26 @@ def _looks_like_initial_body_clobber(
   if len(initial_text) < 500:
     return False
   current_document = TWebDocument(document)
+  body = document.body
+  initial_main = initial_body_clone.find_first("main")
+  if initial_main is not None and body is not None and body.find_first("main") is None:
+    initial_main_text = _collect_inline_visible_text(initial_main, character_limit=2_000).strip()
+    remaining_text = _collect_inline_visible_text(body, character_limit=512).strip()
+    initial_controls = sum(
+      node.tag in {"input", "select", "textarea", "button"}
+      for node in _iter_descendant_elements(initial_body_clone)
+    )
+    if len(current_document.form_controls()) > initial_controls:
+      return False
+    if (
+      len(initial_main_text) >= 160
+      and len(remaining_text) <= max(80, min(320, len(initial_main_text) // 4))
+    ):
+      LOGGER.debug(
+        "initial main removed source=%s initial_main_chars=%d remaining_chars=%d",
+        sanitize_url_for_log(document.source), len(initial_main_text), len(remaining_text),
+      )
+      return True
   raw_text = _document_raw_text(document)
   threshold = max(8, min(80, len(initial_text) // 20))
   body = document.body
@@ -3073,11 +3093,13 @@ def _augment_sparse_body_from_hydration(
     return
 
   if nav_target is None:
-    body_sections = sections
-    nav_sections: list[HydrationSection] = []
+    body_sections, nav_sections = _partition_hydration_sections(sections)
+    body_sections.extend(nav_sections)
+    nav_sections = []
   else:
     body_sections, nav_sections = _partition_hydration_sections(sections)
     body_sections = _drop_duplicate_nav_body_sections(body_sections, nav_target)
+    nav_sections = _drop_duplicate_nav_body_sections(nav_sections, nav_target)
   body_section = ElementNode(tag="section", attrs={"data-tweb-hydration": "1", "data-tweb-hydration-role": "body"})
   if include_heading:
     heading = ElementNode(tag="h2")

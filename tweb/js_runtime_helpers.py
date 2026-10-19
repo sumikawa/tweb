@@ -14,6 +14,8 @@ _WEBPACK_JSONP_RE = re.compile(
   r"^\s*\(window\.webpackJsonp=window\.webpackJsonp\|\|\[\]\)\.push\(",
 )
 _JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+_JS_CODE_WORD_RE = re.compile(r"[\w$]+")
+_JS_REGEX_LITERAL_RE = re.compile(r"/(?:\\.|[^/\\\[\n]|\[(?:\\.|[^\]\\])*\])+/[a-z]*")
 _NULLISH_STRING_RECEIVER_ERROR_RE = re.compile(
   r"cannot read property '(?P<method>[A-Za-z_$][A-Za-z0-9_$]*)' of (?:undefined|null)",
   re.IGNORECASE,
@@ -65,6 +67,119 @@ def _normalize_js_exception(error: quickjs.JSException) -> JavaScriptRuntimeErro
 def _should_reset_runtime_after_js_error(error: JavaScriptRuntimeError) -> bool:
   message = str(error).strip().lower()
   return message in {"", "null", "undefined"}
+
+
+def _js_code_tokens(source: str):
+  """Yield code tokens, excluding comments and literal contents (but visiting ${...})."""
+  index = 0
+  previous = ""
+  template = False
+  template_expressions: list[int] = []
+  braces = 0
+  while index < len(source):
+    char = source[index]
+    if template:
+      if char == "\\":
+        index += 2
+        continue
+      if char == "`":
+        template = False
+        previous = "literal"
+      elif source.startswith("${", index):
+        template_expressions.append(braces)
+        braces += 1
+        yield ("{", index + 1, index + 2)
+        previous = "{"
+        template = False
+        index += 2
+        continue
+      index += 1
+      continue
+    if char.isspace():
+      index += 1
+      continue
+    if source.startswith("//", index):
+      end = source.find("\n", index + 2)
+      index = len(source) if end < 0 else end + 1
+      continue
+    if source.startswith("/*", index):
+      end = source.find("*/", index + 2)
+      index = len(source) if end < 0 else end + 2
+      continue
+    if char in {"'", '"'}:
+      quote = char
+      index += 1
+      while index < len(source):
+        if source[index] == "\\":
+          index += 2
+        elif source[index] == quote:
+          index += 1
+          break
+        else:
+          index += 1
+      previous = "literal"
+      continue
+    if char == "`":
+      template = True
+      index += 1
+      continue
+    if char == "/" and _can_start_js_regex(previous):
+      match = _JS_REGEX_LITERAL_RE.match(source, index)
+      if match:
+        index = match.end()
+        previous = "literal"
+        continue
+    match = _JS_CODE_WORD_RE.match(source, index) if char.isalnum() or char in {"_", "$"} else None
+    end = match.end() if match else index + 1
+    token = source[index:end]
+    if token == "{":
+      braces += 1
+    elif token == "}":
+      braces -= 1
+      if template_expressions and braces == template_expressions[-1]:
+        template_expressions.pop()
+        template = True
+    yield (token, index, end)
+    previous = token
+    index = end
+
+
+def _rewrite_class_static_blocks(source: str) -> str:
+  # Private static field initializers preserve ordering, lexical this/super, and
+  # visibility without adding public properties to the class constructor.
+  if re.search(r"\bstatic(?:\s|/\*.*?\*/|//[^\n]*(?:\n|$))*\{", source, re.DOTALL) is None:
+    return source
+  tokens = list(_js_code_tokens(source))
+  stack: list[str] = []
+  pending_classes: list[int] = []
+  edits: list[tuple[int, int, str]] = []
+  serial = 0
+  for index, (token, start, end) in enumerate(tokens):
+    following = tokens[index + 1][0] if index + 1 < len(tokens) else ""
+    if token == "class" and (following in {"{", "extends"} or following.isidentifier() or _JS_IDENTIFIER_RE.fullmatch(following)):
+      pending_classes.append(len(stack))
+    if token == "static" and following == "{" and stack and stack[-1] == "class":
+      opening = tokens[index + 1]
+      try:
+        closing = _find_matching_js_pair_lenient(source, opening[1], "{", "}")
+      except ValueError:
+        return source
+      while f"__twebStaticBlock{serial}" in source:
+        serial += 1
+      name = f"__twebStaticBlock{serial}"
+      serial += 1
+      edits.append((start, opening[2], f"static #{name} = (() => {{"))
+      edits.append((closing + 1, closing + 1, ")();"))
+    if token in {"{", "(", "["}:
+      is_class = token == "{" and pending_classes and pending_classes[-1] == len(stack)
+      if is_class:
+        pending_classes.pop()
+      stack.append("class" if is_class else token)
+    elif token in {"}", ")", "]"} and stack:
+      stack.pop()
+  for start, end, text in sorted(edits, reverse=True):
+    source = source[:start] + text + source[end:]
+  return source
 
 
 def _find_matching_js_delimiter(

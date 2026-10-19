@@ -138,30 +138,26 @@
 - 本文がすでに十分取れているページでは、UUID・内部 URL・日時・短い UI ラベルのような low-signal な hydration 値では補完を発火させない
 - 補完後は `document.hydration_debug()` で、どの source を採用したか、`confidence` が何か、site-specific fallback を併用したかを確認できる
 - 1000文字以下でもlinkと入力controlを持つcompactな機能UIは、未表示のhydration値より優先して保持し、app mountを置換しない
-- note.com 向けには generic collector でも `__next_f` の React flight 断片から category や note object を section 化し、必要な場合だけ site-specific 側で既存レイアウト保持を助ける
-- note.com home の Nuxt mount が QuickJS 上で完走しない場合は、page runtime から既存の `/api/v3/mkit_layouts/json?context=home_tl&page=1` を呼び、返ってきた section の note title/link を `timeline__body` に補完する
-- note.com home/topic の runtime fetch は共通の `mkit_layouts` probe helper に寄せ、section probe が pending の間は短い drain/poll を繰り返してから空判定する
-- それでも QuickJS 側 probe が空のままなら、同じ session で同 endpoint を Python 側から再取得して補完し、Chrome fallback には逃がさない
+- リンクの補完には payload の明示 URL / path / pathname と、同じラベルに対して一意な既存 DOM anchor を使う。`urlname` / `key` / `engName` / `parentDir` / `slug` からサイト独自の route は組み立てない。ラベルが重複して異なる URL を指す場合も推測しない
+- URL を持たない item はテキストとして保持し、長い記事タイトルが複数ある section は recovered text として回収する。navigation role を持つ section は本文候補の後に置き、ナビ専用の挿入先がなくても記事候補を先に表示する。CSS class / style 値や Flight の property 参照文字列を補助テキストへ混ぜない
+- note.com の home / topic も inline Flight、既知 root、ページ自身の fetch / XHR 応答を使う汎用 collector で読む。固定 API endpoint の合成、専用 probe / poll / retry、Python による API 再取得は削除した。ページ自身の通信と非同期処理は既存の runtime / session / drain 経路で扱う
+- QuickJS が解釈できない class static block は、同じ位置の private static field の arrow initializer に変換して実行する。初期化順・lexical `this` / `super` と外部からの非可視性を維持し、文字列・コメント・正規表現の本文は変換しない。`class_static_block_rewrite_scripts` と debug log で変換の有無を確認できる
+- 十分な初期本文がある `main` が消失し、短い header / footer だけが残る場合も汎用の初期レイアウト復元対象にする。新たな入力 UI が作られた場合や、十分な別本文がある場合はこの消失判定で戻さない
 
 #### `site_specific.py` の現在位置
 
 - `tweb/site_specific.py` は「サイト名ベースの例外集」であり続けるのではなく、generic 側へまだ昇格しきれていない残差を一時的に置く場所として扱う
-- 現在ここにある処理は、大きくは次の failure class に分けて理解する
-- interactive section が初期 HTML では折りたたまれていて、既存 DOM だけでは中身を読めない
-- page runtime には必要データへ到達する経路があるが、QuickJS 上で mount や async 完了が不安定で、そのままでは本文が空のまま残る
-- 上の経路が runtime 側でも不安定なとき、同じ session を使って Python 側から同等データを取り直せば browser-render fallback を避けられる
+- 現在残るのは、カクヨムの作品を Apollo cache から選び、目次 schema を section へ変換し、episode URL を生成する処理だけである。Apollo 参照解決と disclosure への注入は汎用側に置く。note.com の専用 fetch / データ変換処理はない
 
 #### 現在の残差を failure class で見る
 
 - disclosure / accordion:
   `HydrationSection` を見出し一致で hidden panel や `aria-controls` 付き button に差し込む generic disclosure 補完を使う。site-specific section に加え、generic collector が抽出した section も同じ経路で補完する。既存のテキスト・入力欄・リンク・メディアを持つ panel と空の section は補完対象から外す。
   本文が十分読めており、先に得た section がすべて対応する panel に補完済みなら、URL に依存せず generic collector の追加実行を省く。未対応 section があれば通常の収集を続ける。以前の Kakuyomu episode URL 限定判定は削除し、debug reason は `body-already-readable-with-disclosure-sections` とした。Kakuyomu の Apollo 参照解決は `tweb/apollo.py` に移し、目次 schema の解釈と episode URL の生成規則を site-specific 側に残す。runtime cache は対象作品から到達する entity の必要 field だけを読み、1 entity の転送は200,000文字以内に制限する。複数候補の曖昧解消や role ベースの対象選別も今後の課題とする。
-- note.com topic runtime:
-  `/api/v3/mkit_layouts/json?context=category_<topic>&page=1` の section payload を、home と同じ runtime fetch helper + Python retry helper に寄せた。`/topic/outdoor/camping` のような多段 path は API 側の `category_outdoor_camping` に正規化して叩く。残っているのは endpoint 自体が note.com 固有である点で、probe / retry の仕組み自体は residual ではなくなった。
-- note.com home runtime:
-  runtime probe を数回待ってから、だめなら Python 側で同 endpoint を再取得する仕組みは topic と共通 helper に寄せた。残っているのは endpoint と item shape が note.com 固有である点で、retry 制御自体は residual ではなくなった。
-- note.com `__next_f` layout restore:
-  section 自体は generic collector で取れる。初期レイアウト復元も body 全置換ではなく、main ancestor path と shell sibling を generic に戻すところまでは移したが、pane ごとの部分復元はまだ residual として残している。
+- runtime mount failure:
+  class static block の構文変換、消失した main の復元、inline Flight / runtime network JSON の共通 collector で補う。URL の根拠を持たない記事は本文として表示し、誤ったリンクを生成しない。React / Nuxt 全体の mount 成功や未知の router の再現まで保証するものではない。
+- pane layout restore:
+  main ancestor path と shell sibling は汎用に復元する。pane ごとの部分復元や同名候補の曖昧解消は引き続き改善対象とする。
 - inline Flight chunk scan:
   `window.__next_f` の実行結果だけでなく、HTML 内の `__next_f.push(...)` 文字列そのものも generic runtime-data collector が読む。script 実行順や runtime 状態で `__next_f` 参照を取りこぼしても、topic sidebar の categories / subCategories のような nav data を復元できる。
 - 可視 client-failure shell の後始末:

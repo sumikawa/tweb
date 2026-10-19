@@ -4191,8 +4191,8 @@ class JsRuntimeTest(unittest.TestCase):
                   categoryGroup: {
                     title: 'Hydrated Categories',
                     subCategories: [
-                      { title: 'Linked Topic', engName: 'linked/topic' },
-                      { title: 'Second Topic', engName: 'second-topic' }
+                      { title: 'Linked Topic', href: '/topic/linked/topic' },
+                      { title: 'Second Topic', href: '/topic/second-topic' }
                     ]
                   }
                 }
