@@ -3239,7 +3239,7 @@ class TwebBrowserApp(App[None]):
           self.current_page.pane_render_cache,
           width=self._content_width(), session=self.session, include_images=self.include_images,
         ).text
-        if normalized_snippet not in _normalize_pane_match_text(rendered):
+        if not _pane_match_contains(rendered, normalized_snippet):
           continue
         matching_targets.append(pane_target)
     if len(matching_targets) == 1:
@@ -3277,6 +3277,7 @@ class TwebBrowserApp(App[None]):
       root,
       deepest_match,
       line_snippet,
+      minimum_path=pane_target.path,
       width=self._content_width(),
       session=self.session,
       include_images=self.include_images,
@@ -3682,7 +3683,7 @@ def _pane_target_path_for_region(
   matching_paths = [
     path
     for path, normalized_rendered in normalized_by_path.items()
-    if normalized_snippet in normalized_rendered
+    if _pane_match_contains(normalized_rendered, normalized_snippet)
   ]
   if len(matching_paths) == 1:
     return matching_paths[0]
@@ -3700,6 +3701,13 @@ def _merge_block_region_pair(first: BlockRegion, second: BlockRegion) -> BlockRe
 
 def _normalize_pane_match_text(text: str) -> str:
   return " ".join(text.split())
+
+
+def _pane_match_contains(rendered: str, snippet: str) -> bool:
+  # Pane expansion changes wrap positions, including within Japanese words.
+  # Match independently of layout whitespace in both the source and subtree.
+  compact_snippet = "".join(snippet.split())
+  return bool(compact_snippet) and compact_snippet in "".join(rendered.split())
 
 
 def _deepest_matching_descendant_path(
@@ -3732,9 +3740,9 @@ def _deepest_matching_descendant_path(
       include_images=include_images,
     )
     normalized_rendered = _normalize_pane_match_text(rendered)
-    if normalized_snippet not in normalized_rendered:
+    if not _pane_match_contains(normalized_rendered, normalized_snippet):
       return
-    has_only_snippet = int(normalized_rendered == normalized_snippet)
+    has_only_snippet = int("".join(normalized_rendered.split()) == "".join(normalized_snippet.split()))
     has_multiple_blocks = int("\n\n" not in rendered)
     has_element_children = int(not any(isinstance(child, ElementNode) for child in current.children))
     score = (has_only_snippet, has_multiple_blocks, has_element_children, len(normalized_rendered), -len(current_path))
@@ -3755,13 +3763,14 @@ def _promote_heading_match_path(
   path: tuple[int, ...],
   line_snippet: str,
   *,
+  minimum_path: tuple[int, ...] = (),
   width: int,
   session: requests.Session | None,
   include_images: bool = True,
 ) -> tuple[int, ...]:
   normalized_snippet = _normalize_pane_match_text(line_snippet)
   current_path = path
-  while current_path:
+  while len(current_path) > len(minimum_path):
     node = _element_node_at_path(root, current_path)
     parent = _element_node_at_path(root, current_path[:-1])
     if node is None or parent is None:
@@ -3794,7 +3803,7 @@ def _promote_heading_match_path(
       session=session,
       include_images=include_images,
     )
-    if normalized_snippet not in _normalize_pane_match_text(parent_rendered):
+    if not _pane_match_contains(parent_rendered, normalized_snippet):
       break
     current_path = current_path[:-1]
   return current_path
@@ -3846,7 +3855,7 @@ def _promote_leading_metadata_match_path(
       if (
         len(parent_path) >= len(minimum_path)
         and parent_path[:len(minimum_path)] == minimum_path
-        and normalized_snippet in _normalize_pane_match_text(parent_rendered)
+        and _pane_match_contains(parent_rendered, normalized_snippet)
       ):
         return candidate_path[:-1]
     candidate_path = candidate_path[:-1]

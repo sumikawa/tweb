@@ -9,6 +9,7 @@ TUI モードの操作仕様と表示方針をまとめる。
 - `--debug` の `tui timing phase=... elapsed_ms=...` で renderer、controls/links、page build、source/display buffer、pane detection、pane region 統合、focused pane、viewport 更新を分けて確認できる。`page_build` は後段処理の合計で、renderer と viewport は別計測となる。子フェーズは合計に含まれるため足し合わせない
 - 構築時の数値は `BrowserPage.build_timings_ms` にも保持する。pane detection の省略理由は `pane detection skipped reason=lightweight-render|no-layout-candidate` に出る
 - static-rich page は通常レンダラと同じ lightweight 判定で pane detection を省略する。構造走査では hidden / template 内の layout hint を候補にしない
+- `v` の対象は検出した pane の境界内に保ち、先頭見出しから対象を広げる場合も隣の pane を含めない。本文の照合はレイアウト由来の空白・改行を無視し、日本語の折り返し位置が変わっても同じ pane を特定する
 - `v` では元ページの pane target、source/full-page buffer、pane subtree の text / interactive metadata を再利用する。全体表示への復帰時は元の buffer を使い、リンク・control・block の対応を保持する
 - キャッシュは同一ページ・同一幅・同じ画像表示設定での pane 切り替えに限定する。load、DOM 更新後の rerender、resize、background render は作り直す
 - worker のキャンセルをページ構築の段階間で確認する。実行中の単一 render / CSS 処理の強制停止は対象外とする

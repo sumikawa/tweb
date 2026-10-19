@@ -298,6 +298,53 @@ class TuiTest(unittest.IsolatedAsyncioTestCase):
       self.assertEqual(app.current_page.buffer.line_col(app.cursor_index)[0], line_col_before_restore[0])
       self.assertIn("restored all panes", str(app.query_one("#status", Static).content))
 
+  async def test_v_keeps_left_heading_focus_inside_detected_pane(self) -> None:
+    resource = Resource(source="left-article-heading", content="""
+      <html><body><div style="display:flex">
+        <main><article><h1>川下りの旅</h1><p>本文が続きます。</p></article><footer>関連記事</footer></main>
+        <aside><h2>サイドバー</h2><p>おすすめの記事</p></aside>
+      </div></body></html>
+    """)
+    await self._assert_left_article_focus(resource, "川下りの旅")
+
+  async def test_v_matches_wrapped_japanese_line_inside_left_pane(self) -> None:
+    resource = Resource(source="left-wrapped-article", content="""
+      <html><body><div style="display:flex">
+        <main><article><h1>川下りの旅</h1><p>最初の段落。</p>
+          <p>あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん。</p>
+          <p>本文が続きます。</p>
+        </article></main>
+        <aside><h2>サイドバー</h2><p>おすすめの記事</p></aside>
+      </div></body></html>
+    """)
+    # This narrow-pane line crosses a wrap in the full-width subtree render.
+    await self._assert_left_article_focus(resource, "まみむめも")
+
+  async def _assert_left_article_focus(self, resource: Resource, phrase: str) -> None:
+    app = TwebBrowserApp(str(TUI_ROOT), width=60)
+    async with app.run_test(size=(60, 20)) as pilot:
+      await pilot.pause()
+      document = TWebDocument(parse_document(resource))
+      result = render_normal_with_metadata(document.document, width=60, link_style="none", text_styles=False)
+      app.current_page = app._build_browser_page(
+        resource=resource, document=document, rendered=result.text,
+        links=[], controls=[], is_partial=False,
+      )
+      original = app.current_page.rendered
+      app.cursor_index = original.index(phrase)
+      app._sync_cursor()
+      await pilot.press("v")
+      await pilot.pause()
+      self.assertIsNotNone(app.pane_focus_target_path)
+      self.assertIn("本文が続きます。", app.current_page.rendered)
+      self.assertNotIn("サイドバー", app.current_page.rendered)
+      self.assertNotIn("おすすめの記事", app.current_page.rendered)
+      self.assertNotIn("|", app.current_page.rendered)
+      await pilot.press("v")
+      await pilot.pause()
+      self.assertIsNone(app.pane_focus_target_path)
+      self.assertEqual(app.current_page.rendered, original)
+
   async def test_v_restore_keeps_full_page_links(self) -> None:
     app = TwebBrowserApp(str(TUI_ROOT), width=40)
     resource = Resource(
