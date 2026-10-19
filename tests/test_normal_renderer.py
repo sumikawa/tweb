@@ -1927,16 +1927,33 @@ Line two</pre>
       output.splitlines(),
       [
         "Side             | Alpha.",
-        "",
+        "                 |",
         "                 | ## \x1b[1mSection\x1b[22m",
-        "",
+        "                 |",
         "                 | Body.",
-        "",
+        "                 |",
         "                 | ### \x1b[1mSubsection\x1b[22m",
-        "",
+        "                 |",
         "                 | More.",
       ],
     )
+
+  def test_two_column_divider_continues_through_paragraph_gaps_without_images(self) -> None:
+    for style in ("display:flex", "display:grid;grid-template-columns:1fr 1fr"):
+      with self.subTest(style=style):
+        resource = Resource(source="inline", content=f"""
+          <html><body><div style="{style}">
+            <div><p>最初の段落。</p><img src="left.png"><p>次の段落。</p></div>
+            <div><p>右側。</p></div>
+          </div></body></html>
+        """)
+        output = render_normal(parse_document(resource), width=60, text_styles=False, include_images=False)
+        lines = output.splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(all("|" in line for line in lines))
+        self.assertEqual(lines[1].strip(), "|")
+        self.assertEqual(len({_display_width(line.split("|")[0]) for line in lines}), 1)
+        self.assertNotIn("[image]", output)
 
   def test_keeps_grid_separator_aligned_after_sidebar_runs_out(self) -> None:
     resource = Resource(

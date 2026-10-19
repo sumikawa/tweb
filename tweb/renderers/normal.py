@@ -2917,9 +2917,6 @@ def _merge_text_columns(left_text: str, right_text: str, left_width: int, right_
   for index in range(line_count):
     left = left_lines[index] if index < len(left_lines) else ""
     right = right_lines[index] if index < len(right_lines) else ""
-    if not left and not right:
-      merged.append("")
-      continue
     if right and left:
       merged.append(f"{_pad_display_width(left, left_width)}{COLUMN_SEPARATOR}{right}".rstrip())
       continue
