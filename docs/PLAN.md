@@ -233,14 +233,15 @@
 - `tweb/runtime_data.py` を追加し、`window` 上の既知 hydration root、inline JSON script、chunk 配列、`fetch` / XHR 応答の 4 系統を同じ正規化インターフェースへ流し込めるようにした
 - inline script に直接埋め込まれた JSON literal と text fragment 辞書も generic collector で読めるようにし、short shell ページの recovered text 補完へ流せるようにした
 - generic collector は `HydrationSection` / `HydrationLink` / 補助テキストへ正規化し、`title + item list + role` を共通の出口として扱う
-- href を持たない runtime data でも、既知の `urlname` / `key` / `engName` / `slug` / 既存 DOM anchor から汎用的に href を再構成するようにした
+- リンクは明示 URL / path / pathname または同一ラベルに対して一意な既存 DOM anchor を採用する。`urlname` / `key` / `engName` / `parentDir` / `slug` からのサイト依存 URL 推測は削除し、根拠のない item はテキストとして保持する
 - browser-render fallback 前に generic runtime data 補完を試し、その結果を `confidence` と source summary を持つ `hydration_debug()` で追えるようにした
 - `tests.test_document_api` / `tests.test_js_runtime` に inline JSON、`__next_f`、network JSON 応答、loading shell 差し替えの回帰を追加した
 - `__next_f` については runtime 上の配列だけでなく inline script の `push(...)` 文字列も回帰対象に含め、source summary で `inline-chunk` を確認して note.com topic sidebar の categories / subCategories 再発を防ぐ
+- note.com の固定 API probe / retry / Python 再取得を削除した。ページが発行する通信の JSON は既存の runtime network collector で扱う。class static block の構文互換と、footer を残して消失した main の復元もサイト名に依存せず実装した
 
 残っている残差:
 
-- note.com endpoint / item shape そのものの site-specific 部分
+- カクヨムの作品・目次 schema の解釈と episode URL の生成規則
 - shell 全体の置換に頼らず、pane / disclosure / tab 単位で復元対象をより細かく選ぶ一般化
 - disclosure 復元は見出し一致ベースの generic 補完まで進んだが、複数候補の曖昧解消や section role を使った対象選別は未整理
 

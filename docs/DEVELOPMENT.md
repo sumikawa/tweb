@@ -160,7 +160,7 @@ uv run python3 -m tweb.audit --tag en
 - `tweb/api.py`: `TWebDocument` と BeautifulSoup 風 API
 - `tweb/runtime_data.py`: runtime data / hydration collector
 - `tweb/apollo.py`: Apollo normalized cache の共通参照解決と runtime entity の限定読出し
-- `tweb/site_specific.py`: generic collector で吸収しきれない残差
+- `tweb/site_specific.py`: カクヨムの目次 schema / episode URL の残差（note 専用 fetch は削除済み）
 - `tweb/tui.py`: Textual TUI
 - `tweb/renderers/normal.py`: 通常表示レンダラ
 - `tweb/renderers/dom.py`: DOM / DOM-AI レンダラ
