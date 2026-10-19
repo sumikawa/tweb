@@ -130,6 +130,7 @@
 #### hydration data フォールバック
 
 - `tweb/runtime_data.py` の generic collector が、`window.__NUXT__` / `__NEXT_DATA__` / `__INITIAL_STATE__` / `__APOLLO_STATE__` / `__PRELOADED_STATE__` の既知 root、inline JSON script、`__next_f` などの chunk 配列、runtime 中の `fetch` / XHR JSON 応答を同じ出口へ正規化する
+- Apollo normalized cache の `__ref` は `tweb/apollo.py` で共通解決する。既知の `__APOLLO_STATE__` root、bootstrap 内の同名 cache、`ROOT_QUERY` 等の root を持つ cache を対象とし、通常の JSON にある同名 field は参照として解釈しない。`ROOT_QUERY` があればそこから到達するデータを採用し、無関係な cache entry を本文に混ぜない。循環参照・参照切れは `None` とし、深さ16・処理対象10,000値までで打ち切る。入力 cache は変更しない
 - inline script に直接埋め込まれた JSON literal や `[{type,value,children}]` 形式の text fragment も generic collector が拾い、short shell ページでは recovered text として本文へ差し込める
 - これは Web 側で一般的な埋め込み状態であり、`tweb` 独自概念ではない
 - `tweb` 独自なのは、本文が空または loading 表示しかない場合に、その埋め込み状態から見出し・リンク・セクション候補を抽出して補完表示へ注入するフォールバックである
@@ -154,7 +155,7 @@
 
 - disclosure / accordion:
   `HydrationSection` を見出し一致で hidden panel や `aria-controls` 付き button に差し込む generic disclosure 補完を使う。site-specific section に加え、generic collector が抽出した section も同じ経路で補完する。既存のテキスト・入力欄・リンク・メディアを持つ panel と空の section は補完対象から外す。
-  本文が十分読めており、先に得た section がすべて対応する panel に補完済みなら、URL に依存せず generic collector の追加実行を省く。未対応 section があれば通常の収集を続ける。以前の Kakuyomu episode URL 限定判定は削除し、debug reason は `body-already-readable-with-disclosure-sections` とした。Kakuyomu の Apollo 目次抽出と episode URL の生成規則は引き続き site-specific 側に残る。複数候補の曖昧解消や role ベースの対象選別も今後の課題とする。
+  本文が十分読めており、先に得た section がすべて対応する panel に補完済みなら、URL に依存せず generic collector の追加実行を省く。未対応 section があれば通常の収集を続ける。以前の Kakuyomu episode URL 限定判定は削除し、debug reason は `body-already-readable-with-disclosure-sections` とした。Kakuyomu の Apollo 参照解決は `tweb/apollo.py` に移し、目次 schema の解釈と episode URL の生成規則を site-specific 側に残す。runtime cache は対象作品から到達する entity の必要 field だけを読み、1 entity の転送は200,000文字以内に制限する。複数候補の曖昧解消や role ベースの対象選別も今後の課題とする。
 - note.com topic runtime:
   `/api/v3/mkit_layouts/json?context=category_<topic>&page=1` の section payload を、home と同じ runtime fetch helper + Python retry helper に寄せた。`/topic/outdoor/camping` のような多段 path は API 側の `category_outdoor_camping` に正規化して叩く。残っているのは endpoint 自体が note.com 固有である点で、probe / retry の仕組み自体は residual ではなくなった。
 - note.com home runtime:
@@ -246,6 +247,7 @@
 - 巨大な JS bridge 定義は `tweb/js_runtime_bridge.py`
 - 文書 API からの呼び出しと hydration data フォールバックの入口は `tweb/api.py`
 - runtime data collector と generic section/link 正規化は `tweb/runtime_data.py`
+- Apollo cache の参照解決と runtime entity の限定読出しは `tweb/apollo.py`
 - generic 側へまだ昇格していない残差の hydration / interaction 補完は `tweb/site_specific.py`
 - CLI の script 読み込みは `tweb/cli.py`
 - TUI の script 実行フローは `tweb/tui.py`

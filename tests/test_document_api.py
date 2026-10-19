@@ -50,7 +50,7 @@ from tweb.fetcher import (
   fetch_resource,
 )
 from tweb.interactions import register_parents_for_interactions, sync_interactive_document
-from tweb.js_runtime import GLOBAL_EXTERNAL_SCRIPT_CACHE, _reset_external_script_cache_state_for_tests
+from tweb.js_runtime import QuickJSRuntime, GLOBAL_EXTERNAL_SCRIPT_CACHE, _reset_external_script_cache_state_for_tests
 from tweb.js_runtime_helpers import JavaScriptRuntimeError
 from tweb.parser import parse_document
 from tweb.renderers.normal import render_normal, render_normal_with_metadata
@@ -73,6 +73,16 @@ BUTTON_CLICK_NAVIGATION = ROOT / "tests" / "fixtures" / "button_click_navigation
 
 def load_document(path: Path) -> TWebDocument:
   return TWebDocument(parse_document(fetch_resource(str(path))))
+
+
+def kakuyomu_runtime(document=None) -> QuickJSRuntime:
+  if document is None:
+    document = parse_document(Resource(source="https://kakuyomu.jp/", content="<html><body></body></html>"))
+  runtime = QuickJSRuntime(document)
+  state = json.loads((ROOT / "tests" / "fixtures" / "kakuyomu_apollo.json").read_text())
+  next_data = {"props": {"pageProps": {"__APOLLO_STATE__": state}}}
+  runtime.eval("window.__NEXT_DATA__ = " + json.dumps(next_data))
+  return runtime
 
 
 class DocumentApiTest(unittest.TestCase):
@@ -815,30 +825,8 @@ class DocumentApiTest(unittest.TestCase):
     mock_fetch_resource.assert_called_once()
 
   def test_extracts_kakuyomu_toc_sections(self) -> None:
-    class FakeRuntime:
-      def eval(self, source: str, drain_timers: bool = False):
-        if "Work:822139842650897571" in source:
-          return json.dumps(
-            [
-              {
-                "title": "逆行転生3年目",
-                "items": [
-                  {
-                    "text": "第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化",
-                    "href": "/works/822139842650897571/episodes/822139845052603357",
-                  },
-                  {
-                    "text": "第32話 8/15(月)〜31(水) 追加調整",
-                    "href": "/works/822139842650897571/episodes/822139845892635822",
-                  },
-                ],
-              },
-            ]
-          )
-        return None
-
     sections = _extract_kakuyomu_toc_sections(
-      FakeRuntime(),
+      kakuyomu_runtime(),
       "https://kakuyomu.jp/works/822139842650897571",
     )
 
@@ -853,30 +841,8 @@ class DocumentApiTest(unittest.TestCase):
     )
 
   def test_extracts_kakuyomu_toc_sections_for_episode_url(self) -> None:
-    class FakeRuntime:
-      def eval(self, source: str, drain_timers: bool = False):
-        if "Work:822139842650897571" in source:
-          return json.dumps(
-            [
-              {
-                "title": "逆行転生3年目",
-                "items": [
-                  {
-                    "text": "第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化",
-                    "href": "/works/822139842650897571/episodes/822139845052603357",
-                  },
-                  {
-                    "text": "第32話 8/15(月)〜31(水) 追加調整",
-                    "href": "/works/822139842650897571/episodes/822139845892635822",
-                  },
-                ],
-              },
-            ]
-          )
-        return None
-
     sections = _extract_kakuyomu_toc_sections(
-      FakeRuntime(),
+      kakuyomu_runtime(),
       "https://kakuyomu.jp/works/822139842650897571/episodes/2912051601840758084",
     )
 
@@ -2428,30 +2394,6 @@ class DocumentApiTest(unittest.TestCase):
     self.assertIn("Block most ads and cookie popups by default.", text)
 
   def test_augments_kakuyomu_accordion_and_click_opens_it(self) -> None:
-    class FakeRuntime:
-      def eval(self, source: str, drain_timers: bool = False):
-        if "return JSON.stringify({ texts, links, sections });" in source:
-          return json.dumps({"texts": [], "links": [], "sections": []})
-        if "Work:822139842650897571" in source:
-          return json.dumps(
-            [
-              {
-                "title": "逆行転生3年目",
-                "items": [
-                  {
-                    "text": "第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化",
-                    "href": "/works/822139842650897571/episodes/822139845052603357",
-                  },
-                  {
-                    "text": "第32話 8/15(月)〜31(水) 追加調整",
-                    "href": "/works/822139842650897571/episodes/822139845892635822",
-                  },
-                ],
-              },
-            ]
-          )
-        return None
-
     wrapped = TWebDocument(
       parse_document(
         Resource(
@@ -2475,7 +2417,7 @@ class DocumentApiTest(unittest.TestCase):
       )
     )
 
-    _augment_sparse_body_from_hydration(wrapped.document, FakeRuntime())
+    _augment_sparse_body_from_hydration(wrapped.document, kakuyomu_runtime(wrapped.document))
     button = next(control for control in wrapped.form_controls() if control.kind == "button")
     content = wrapped.find("div", attrs={"class": "WorkTocAccordion_contents__6nJhY"})
     self.assertIsNotNone(content)
@@ -2495,28 +2437,6 @@ class DocumentApiTest(unittest.TestCase):
     self,
     mock_collect_runtime_data: Mock,
   ) -> None:
-    class FakeRuntime:
-      def eval(self, source: str, drain_timers: bool = False):
-        if "Work:822139842650897571" in source:
-          return json.dumps(
-            [
-              {
-                "title": "逆行転生3年目",
-                "items": [
-                  {
-                    "text": "第31話 8/1(月)〜14(日) 拡張IOCSの独自システム化",
-                    "href": "/works/822139842650897571/episodes/822139845052603357",
-                  },
-                  {
-                    "text": "第32話 8/15(月)〜31(水) 追加調整",
-                    "href": "/works/822139842650897571/episodes/822139845892635822",
-                  },
-                ],
-              },
-            ]
-          )
-        raise AssertionError("generic runtime collector should not run")
-
     wrapped = TWebDocument(
       parse_document(
         Resource(
@@ -2553,7 +2473,7 @@ class DocumentApiTest(unittest.TestCase):
       )
     )
 
-    debug = _augment_sparse_body_from_hydration(wrapped.document, FakeRuntime())
+    debug = _augment_sparse_body_from_hydration(wrapped.document, kakuyomu_runtime(wrapped.document))
 
     self.assertIsNotNone(debug)
     self.assertEqual(debug.fallback_reason, "body-already-readable-with-disclosure-sections")

@@ -4,6 +4,7 @@ import json
 import re
 from urllib.parse import quote
 
+from .apollo import read_runtime_apollo_value
 from .dom import DocumentNode
 from .fetcher import fetch_resource, resolve_resource_url
 from .hydration import HydrationSection, merge_hydration_sections
@@ -39,68 +40,33 @@ def _extract_kakuyomu_toc_sections(
   if match is None:
     return []
   work_id = match.group("work_id")
-  payload = runtime.eval(
-    """
-    (function() {
-      function normalize(text) {
-        return String(text || '').replace(/\\s+/g, ' ').trim();
-      }
-      try {
-        const nextData = window.__NEXT_DATA__;
-        const state = nextData
-          && nextData.props
-          && nextData.props.pageProps
-          && nextData.props.pageProps.__APOLLO_STATE__;
-        if (!state || typeof state !== 'object') {
-          return '[]';
-        }
-        const work = state[%s];
-        if (!work || !Array.isArray(work.tableOfContentsV2)) {
-          return '[]';
-        }
-        const sections = work.tableOfContentsV2
-          .map((entryRef) => {
-            const toc = entryRef && typeof entryRef.__ref === 'string' ? state[entryRef.__ref] : null;
-            if (!toc || !Array.isArray(toc.episodeUnions)) {
-              return null;
-            }
-            const chapterRef = toc.chapter && typeof toc.chapter.__ref === 'string' ? toc.chapter.__ref : '';
-            const chapter = chapterRef ? state[chapterRef] : null;
-            const title = normalize(chapter && chapter.title);
-            if (!title) {
-              return null;
-            }
-            const items = toc.episodeUnions
-              .map((episodeRef) => {
-                const ref = episodeRef && typeof episodeRef.__ref === 'string' ? episodeRef.__ref : '';
-                const episode = ref ? state[ref] : null;
-                const episodeId = normalize(episode && episode.id);
-                const text = normalize(episode && episode.title);
-                if (!episodeId || !text) {
-                  return null;
-                }
-                return {
-                  text,
-                  href: `/works/%s/episodes/${encodeURIComponent(episodeId)}`,
-                };
-              })
-              .filter(Boolean);
-            if (items.length < 2) {
-              return null;
-            }
-            return { title, items };
-          })
-          .filter(Boolean);
-        return JSON.stringify(sections);
-      } catch (_error) {
-        return '[]';
-      }
-    })()
-    """
-    % (json.dumps(f"Work:{work_id}"), work_id),
-    drain_timers=False,
+  work = read_runtime_apollo_value(
+    runtime,
+    state_path=("__NEXT_DATA__", "props", "pageProps", "__APOLLO_STATE__"),
+    key=f"Work:{work_id}",
+    fields=("__ref", "tableOfContentsV2", "chapter", "episodeUnions", "title", "id"),
   )
-  return _load_sections(payload)
+  if not isinstance(work, dict) or not isinstance(work.get("tableOfContentsV2"), list):
+    return []
+  sections: list[HydrationSection] = []
+  for toc in work["tableOfContentsV2"]:
+    if not isinstance(toc, dict) or not isinstance(toc.get("episodeUnions"), list):
+      continue
+    chapter = toc.get("chapter")
+    title = _normalize_whitespace(chapter.get("title")) if isinstance(chapter, dict) else ""
+    if not title:
+      continue
+    items: list[tuple[str, str]] = []
+    for episode in toc["episodeUnions"]:
+      if not isinstance(episode, dict):
+        continue
+      episode_id = _normalize_whitespace(episode.get("id"))
+      text = _normalize_whitespace(episode.get("title"))
+      if episode_id and text:
+        items.append((text, f"/works/{work_id}/episodes/{quote(episode_id, safe='')}"))
+    if len(items) >= 2:
+      sections.append(HydrationSection(title=title, items=tuple(items)))
+  return sections
 
 
 def _extract_note_topic_runtime_sections(
