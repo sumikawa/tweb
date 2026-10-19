@@ -28,6 +28,15 @@ from .fetcher import (
   sanitize_url_for_log,
 )
 from .hydration import HydrationLink, HydrationSection, merge_hydration_sections, populate_disclosure_sections
+from .hydration_targets import (
+  element_roles,
+  find_main_region,
+  is_content_container as _looks_like_content_container,
+  is_empty_body_target,
+  is_hidden_region,
+  is_navigation_container as _looks_like_nav_container,
+  is_navigation_section,
+)
 from .interactions import (
   ButtonClickPolicy,
   ButtonClickResult,
@@ -2471,13 +2480,11 @@ def _looks_like_restorable_layout_container(node: ElementNode) -> bool:
     return False
   if _looks_like_nav_container(node) or _looks_like_content_container(node):
     return True
-  values = [
-    node.attrs.get("class", ""),
-    node.attrs.get("id", ""),
-    node.attrs.get("aria-label", ""),
-  ]
-  haystack = " ".join(value.lower() for value in values if value)
-  return any(token in haystack for token in ("shell", "layout", "pane", "rail", "sidebar", "timeline", "content"))
+  return any(
+    isinstance(child, ElementNode)
+    and (child.tag in {"main", "article", "aside", "nav", "header", "footer"} or element_roles(child))
+    for child in node.children
+  )
 
 
 def _materialize_react_bailout_segments(root: ElementNode) -> None:
@@ -3093,11 +3100,11 @@ def _augment_sparse_body_from_hydration(
     return
 
   if nav_target is None:
-    body_sections, nav_sections = _partition_hydration_sections(sections)
+    body_sections, nav_sections = _partition_hydration_sections(sections, nav_target=nav_target, root=body)
     body_sections.extend(nav_sections)
     nav_sections = []
   else:
-    body_sections, nav_sections = _partition_hydration_sections(sections)
+    body_sections, nav_sections = _partition_hydration_sections(sections, nav_target=nav_target, root=body)
     body_sections = _drop_duplicate_nav_body_sections(body_sections, nav_target)
     nav_sections = _drop_duplicate_nav_body_sections(nav_sections, nav_target)
   body_section = ElementNode(tag="section", attrs={"data-tweb-hydration": "1", "data-tweb-hydration-role": "body"})
@@ -3126,6 +3133,8 @@ def _augment_sparse_body_from_hydration(
   )
   if append_unstructured_fallbacks:
     for link in links[:12]:
+      if link.text in section_items:
+        continue
       paragraph = ElementNode(tag="p")
       anchor = ElementNode(tag="a", attrs={"href": link.href})
       anchor.append_child(TextNode(text=link.text))
@@ -3913,8 +3922,13 @@ def _select_hydration_body_target(
   initial_main_attrs: dict[str, str] | None = None,
   initial_main_ancestor_specs: list[tuple[str, dict[str, str]]] | None = None,
 ) -> tuple[ElementNode, bool, bool]:
-  main = body.find_first("main")
+  main = find_main_region(body)
   if main is None:
+    hidden_initial_region = (
+      initial_main_attrs is not None and is_hidden_region(ElementNode(tag="main", attrs=initial_main_attrs))
+    ) or any(is_hidden_region(ElementNode(tag=tag, attrs=attrs)) for tag, attrs in (initial_main_ancestor_specs or []))
+    if hidden_initial_region:
+      return (body, False, True)
     if initial_main_attrs is not None:
       main = ElementNode(tag="main", attrs=dict(initial_main_attrs))
       parent = _locate_recreated_main_parent(body, initial_main_ancestor_specs) or body
@@ -3922,38 +3936,40 @@ def _select_hydration_body_target(
       parent.children.insert(insert_at, main)
       return (main, False, True)
     return (body, False, True)
-  for node, _ancestors in _iter_element_paths(main):
-    if not _looks_like_content_container(node):
+  candidates = []
+  for node, ancestors in _iter_element_paths(main):
+    if node is main or not _looks_like_content_container(node) or not is_empty_body_target(node):
       continue
-    if len(node.text_content().strip()) > 40:
+    if any(is_hidden_region(ancestor) or _looks_like_nav_container(ancestor) for ancestor in ancestors):
       continue
-    return (node, False, False)
+    candidates.append(node)
+  if len(candidates) == 1:
+    return (candidates[0], False, False)
+  if len(candidates) > 1:
+    return (main, False, True)
   split_layout_target = _find_non_nav_main_child_target(main)
   if split_layout_target is not None:
     return (split_layout_target, False, False)
   placeholder = _find_loading_placeholder_container(main)
-  if placeholder is not None:
+  if placeholder is not None and is_empty_body_target(placeholder):
     return (placeholder, True, False)
   return (main, False, True)
 
 
 def _find_non_nav_main_child_target(main: ElementNode) -> ElementNode | None:
-  element_children = [child for child in main.children if isinstance(child, ElementNode)]
-  if len(element_children) < 2:
-    return None
-  nav_like_children = [child for child in element_children if _looks_like_nav_container(child)]
-  if not nav_like_children:
-    return None
-  candidates = [
-    child
-    for child in element_children
-    if child not in nav_like_children
-    and child.tag not in {"script", "style"}
-    and len(child.text_content().strip()) <= 40
-  ]
-  if len(candidates) != 1:
-    return None
-  return candidates[0]
+  candidates: list[ElementNode] = []
+  for parent, ancestors in _iter_element_paths(main):
+    if parent.tag not in {"main", "div", "section"}:
+      continue
+    children = [child for child in parent.children if isinstance(child, ElementNode)]
+    if not any(_looks_like_nav_container(child) for child in children):
+      continue
+    if any(is_hidden_region(node) or _looks_like_nav_container(node) for node in (*ancestors, parent)):
+      continue
+    targets = [child for child in children if not _looks_like_nav_container(child) and is_empty_body_target(child)]
+    if len(targets) == 1:
+      candidates.append(targets[0])
+  return candidates[0] if len(candidates) == 1 else None
 
 
 def _locate_recreated_main_parent(
@@ -4020,39 +4036,54 @@ def _find_main_insertion_index(parent: ElementNode) -> int:
 
 
 def _select_hydration_nav_target(body: ElementNode) -> tuple[ElementNode | None, bool]:
-  main = body.find_first("main")
+  main = find_main_region(body)
+  candidates: list[tuple[int, ElementNode]] = []
   for node, ancestors in _iter_element_paths(body):
-    if node.tag != "aside":
+    if node.tag not in {"aside", "nav", "div", "section"} or not _looks_like_nav_container(node):
       continue
-    if main is not None and main in ancestors:
+    if any(
+      is_hidden_region(ancestor)
+      or ancestor.tag in {"header", "footer"}
+      or element_roles(ancestor) & {"banner", "contentinfo"}
+      for ancestor in (*ancestors, node)
+    ):
       continue
-    return (node, False)
-  if main is None:
+    if any(ancestor.tag == "nav" or element_roles(ancestor) & {"navigation", "menu", "menubar", "tree"} for ancestor in ancestors):
+      continue
+    if any(ancestor.attrs.get("data-tweb-hydration-role") == "body" for ancestor in (*ancestors, node)):
+      continue
+    explicit = node.tag == "nav" or bool(element_roles(node) & {"navigation", "menu", "menubar", "tree"})
+    complementary = node.tag == "aside" or "complementary" in element_roles(node)
+    if explicit:
+      priority = 6 if main in ancestors else 5
+    elif complementary:
+      priority = 4
+    else:
+      if main in ancestors and not any(
+        child is not node and isinstance(child, ElementNode) and is_empty_body_target(child)
+        for child in ancestors[-1].children
+      ):
+        continue
+      priority = 2 if main in ancestors else 1
+    candidates.append((priority, node))
+  if not candidates:
     return (None, False)
-  for node, _ancestors in _iter_element_paths(main):
-    if not _looks_like_nav_container(node):
-      continue
-    if len(node.text_content().strip()) > 40:
-      continue
-    return (node, True)
-  for node, ancestors in _iter_element_paths(body):
-    if node.tag != "nav":
-      continue
-    if main is not None and main in ancestors:
-      continue
-    if len(node.text_content().strip()) > 40:
-      continue
-    return (node, False)
-  return (None, False)
+  best = max(priority for priority, _node in candidates)
+  targets = [node for priority, node in candidates if priority == best]
+  # Ambiguous targets stay in the body; never replace existing navigation controls.
+  return (targets[0], False) if len(targets) == 1 else (None, False)
 
 
 def _partition_hydration_sections(
   sections: list[HydrationSection],
+  *,
+  nav_target: ElementNode | None = None,
+  root: ElementNode | None = None,
 ) -> tuple[list[HydrationSection], list[HydrationSection]]:
   body_sections: list[HydrationSection] = []
   nav_sections: list[HydrationSection] = []
   for section in sections:
-    if _is_topic_nav_section(section):
+    if is_navigation_section(section, nav_target, root=root):
       nav_sections.append(section)
     else:
       body_sections.append(section)
@@ -4139,25 +4170,11 @@ def _hydration_section_from_dom(node: ElementNode) -> HydrationSection | None:
   return HydrationSection(title=title, items=tuple(items))
 
 
-def _is_topic_nav_section(section: HydrationSection) -> bool:
-  if section.role == "nav":
-    return True
-  items = [
-    (text, href)
-    for text, href in section.items
-    if isinstance(href, str) and href
-  ]
-  if len(items) < 2:
-    return False
-  topic_links = [href for _text, href in items if href.startswith("/topic/") and "/n/" not in href]
-  if len(topic_links) != len(items):
-    return False
-  return all(len(" ".join(text.split())) <= 24 for text, _href in items)
-
-
 def _find_loading_placeholder_container(root: ElementNode) -> ElementNode | None:
   for node, ancestors in _iter_element_paths(root):
     if not _looks_like_loading_indicator(node):
+      continue
+    if any(is_hidden_region(ancestor) or _looks_like_nav_container(ancestor) for ancestor in (*ancestors, node)):
       continue
     for ancestor in reversed(ancestors):
       if ancestor.tag not in {"div", "section", "article", "main"}:
@@ -4181,40 +4198,8 @@ def _looks_like_loading_indicator(node: ElementNode) -> bool:
   return any(token in haystack for token in ("loading", "loader", "spinner", "skeleton", "placeholder", "shimmer", "pending", "progress"))
 
 
-def _looks_like_nav_container(node: ElementNode) -> bool:
-  values = [
-    node.tag,
-    node.attrs.get("class", ""),
-    node.attrs.get("id", ""),
-    node.attrs.get("aria-label", ""),
-  ]
-  haystack = " ".join(value.lower() for value in values if value)
-  return any(token in haystack for token in ("nav", "menu", "category", "sidebar", "aside", "toc"))
-
-
 def _normalize_space(value: str) -> str:
   return " ".join(value.split()).strip()
-
-
-def _looks_like_content_container(node: ElementNode) -> bool:
-  values = [
-    node.tag,
-    node.attrs.get("class", ""),
-    node.attrs.get("id", ""),
-    node.attrs.get("aria-label", ""),
-  ]
-  haystack = " ".join(value.lower() for value in values if value)
-  return any(
-    token in haystack
-    for token in (
-      "timeline__body",
-      "timeline-body",
-      "feed-body",
-      "content-body",
-      "content-panel",
-      "article-list",
-    )
-  )
 
 
 def _contains_hydration_marker(node: ElementNode) -> bool:
