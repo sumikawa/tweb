@@ -234,3 +234,22 @@ home の runtime JSON 記録に現れた固定 API 呼出しは6件から0件へ
 各1回の全体所要時間は home `4.781 → 11.016s`、topic `2.691 → 4.263s`。外部リソースの通信・cache 条件を固定していないため、性能改善率として扱わない。Chrome 比較・実ターミナルでの視認確認は未実施。canonical cohort の分類・`active_site_ids` は変更していない。
 
 `make test` は864 tests 成功。URL 合成の抑止、一意な DOM anchor の採用、ページ発行の遅延 JSON fetch、URL を持たない Flight 記事の本文回収、main 消失時の復元と新規入力 UI の保持、class static block の初期化順 / private field / `super` / literal 保持を回帰対象に含めた。
+
+## 2026-10-19: 本文・ナビの補完先を HTML / ARIA / 構造で判定
+
+`6745335` と変更後で、上記の同日取得済み note home / computer_it topic HTML を再生した。HTML は変更せず、Chrome fallback とログイン Cookie の取込を使わない。canonical cohort 外の確認であり、分類・`active_site_ids` は変更していない。
+
+| 対象 | 可視本文文字数 変更前→変更後 | links 総数 変更前→変更後 | 元 HTML の一意なリンクの保持 | 記事タイトルの表示 変更前→変更後 |
+| --- | --- | --- | --- | --- |
+| note home | 1,970 → 1,708 | 39 → 40 | 27 / 27 | 20 / 20 → 20 / 20 |
+| note computer_it topic | 2,739 → 2,690 | 97 → 97 | 85 / 85 | 24 / 43 → 24 / 43 |
+
+本文文字数の減少には、section に分類済みのリンクを補助本文へ重複挿入しなくなった分を含む。変更前に表示できていた記事タイトルと、元 HTML の `(label, href)` の組はすべて保持した。topic の表示件数制限は維持している。両ページの記録上の script error は0件。
+
+本文補完先・ナビ補完先の探索だけを raw HTML の DOM 上で直測し、home は約 `0.68ms`、topic は約 `24.64ms`。変更途中の topic は約 `134.82ms` だったが、候補でないノードの祖先確認を先に行っていた重複走査を減らした。各1回の参考値であり、全体所要時間の改善率には使わない。
+
+ページ処理全体の参考値は home `4.474 → 4.842s`、topic `2.448 → 2.793s`。外部 JS / CSS の通信・cache 条件は固定していない。実ターミナルでの視認確認と Chrome 比較は未実施。
+
+回帰 fixture では用途を HTML / ARIA と section role で明示し、ドメイン・class 名・URL 形式を変更しても同じ領域へ補完することを確認する。別ケースで、用途不明の空 div、複数の同順位候補、非表示の領域、入力 UI、本文中の関連記事一覧をナビと誤認しないことを確認する。識別できない pane は main 側へ追記するため、従来の class 名だけを頼りにした左右振り分けは維持しない。
+
+最終確認の `make test` は879 tests 成功（追加した領域判定・補完の15 tests を含む）。

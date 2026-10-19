@@ -140,6 +140,10 @@
 - 1000文字以下でもlinkと入力controlを持つcompactな機能UIは、未表示のhydration値より優先して保持し、app mountを置換しない
 - リンクの補完には payload の明示 URL / path / pathname と、同じラベルに対して一意な既存 DOM anchor を使う。`urlname` / `key` / `engName` / `parentDir` / `slug` からサイト独自の route は組み立てない。ラベルが重複して異なる URL を指す場合も推測しない
 - URL を持たない item はテキストとして保持し、長い記事タイトルが複数ある section は recovered text として回収する。navigation role を持つ section は本文候補の後に置き、ナビ専用の挿入先がなくても記事候補を先に表示する。CSS class / style 値や Flight の property 参照文字列を補助テキストへ混ぜない
+- 本文・ナビの補完先は `tweb/hydration_targets.py` で判定する。`main` / `article` / `nav`、ARIA の `main` / `feed` / `tabpanel` / `navigation`、見出し付き一覧やリンク密度を使い、`timeline__body` などの class 名や `/topic/` / `/n/` の URL 形式で用途を決めない
+- section の分類は明示 role を優先し、role がない場合はナビ領域の `aria-label` / `aria-labelledby` / 見出し・既存リンクとの対応を使う。所属が分からない section は本文側へ残す。ナビ項目を unstructured link として本文へ重複挿入しない
+- 明示された空の本文領域、またはナビの隣に一意に残る空領域へ補完する。識別できない空 div、同順位の複数候補、構造を読み切れない大きな候補では `main` / `role=main`（なければ body）へ追記し、既存領域を置換しない。構造推定は256ノード・各ノード64子までに制限する
+- `hidden` / `aria-hidden` / inline style で隠された候補、header / footer / ARIA banner / contentinfo のナビ、新旧の入力 UI を空の補完先として選ばない。これらの判定は外部 CSS の完全な可視性計算や、多義的な pane の意味推定を保証するものではない
 - note.com の home / topic も inline Flight、既知 root、ページ自身の fetch / XHR 応答を使う汎用 collector で読む。固定 API endpoint の合成、専用 probe / poll / retry、Python による API 再取得は削除した。ページ自身の通信と非同期処理は既存の runtime / session / drain 経路で扱う
 - QuickJS が解釈できない class static block は、同じ位置の private static field の arrow initializer に変換して実行する。初期化順・lexical `this` / `super` と外部からの非可視性を維持し、文字列・コメント・正規表現の本文は変換しない。`class_static_block_rewrite_scripts` と debug log で変換の有無を確認できる
 - 十分な初期本文がある `main` が消失し、短い header / footer だけが残る場合も汎用の初期レイアウト復元対象にする。新たな入力 UI が作られた場合や、十分な別本文がある場合はこの消失判定で戻さない
@@ -157,7 +161,7 @@
 - runtime mount failure:
   class static block の構文変換、消失した main の復元、inline Flight / runtime network JSON の共通 collector で補う。URL の根拠を持たない記事は本文として表示し、誤ったリンクを生成しない。React / Nuxt 全体の mount 成功や未知の router の再現まで保証するものではない。
 - pane layout restore:
-  main ancestor path と shell sibling は汎用に復元する。pane ごとの部分復元や同名候補の曖昧解消は引き続き改善対象とする。
+  main ancestor path と意味を持つ shell sibling は汎用に復元する。本文・ナビの選別は HTML / ARIA / 構造判定へ移し、class 名に由来する領域判定を削除した。判断材料のない複数候補は選択せず本文へ追記する。pane ごとの詳細な部分復元や disclosure の同名候補の曖昧解消は引き続き改善対象とする。
 - inline Flight chunk scan:
   `window.__next_f` の実行結果だけでなく、HTML 内の `__next_f.push(...)` 文字列そのものも generic runtime-data collector が読む。script 実行順や runtime 状態で `__next_f` 参照を取りこぼしても、topic sidebar の categories / subCategories のような nav data を復元できる。
 - 可視 client-failure shell の後始末:
@@ -243,6 +247,7 @@
 - 巨大な JS bridge 定義は `tweb/js_runtime_bridge.py`
 - 文書 API からの呼び出しと hydration data フォールバックの入口は `tweb/api.py`
 - runtime data collector と generic section/link 正規化は `tweb/runtime_data.py`
+- HTML / ARIA / 構造に基づく補完先・section role の判定は `tweb/hydration_targets.py`
 - Apollo cache の参照解決と runtime entity の限定読出しは `tweb/apollo.py`
 - generic 側へまだ昇格していない残差の hydration / interaction 補完は `tweb/site_specific.py`
 - CLI の script 読み込みは `tweb/cli.py`

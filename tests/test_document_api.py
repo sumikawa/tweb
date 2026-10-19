@@ -2228,8 +2228,8 @@ class DocumentApiTest(unittest.TestCase):
           <body>
             <main>
               <div class="timeline">
-                <div class="timeline__nav"></div>
-                <div class="timeline__body"></div>
+                <div class="timeline__nav" role="navigation"></div>
+                <div class="timeline__body" role="feed"></div>
               </div>
             </main>
           </body>
@@ -5509,8 +5509,8 @@ class DocumentApiTest(unittest.TestCase):
             <body>
               <main>
                 <div class="timeline">
-                  <div class="timeline__nav"></div>
-                  <div class="timeline__body"><div class="loading-spinner"></div></div>
+                  <div class="timeline__nav" role="navigation"></div>
+                  <div class="timeline__body" role="feed"><div class="loading-spinner"></div></div>
                 </div>
               </main>
               <script>document.querySelector('.timeline__body').replaceChildren();</script>
@@ -5822,8 +5822,8 @@ class DocumentApiTest(unittest.TestCase):
             <body>
               <main>
                 <div class="timeline">
-                  <div class="timeline__nav"></div>
-                  <div class="timeline__body"></div>
+                  <div class="timeline__nav" role="navigation"></div>
+                  <div class="timeline__body" role="feed"></div>
                 </div>
               </main>
               <script>
@@ -6560,6 +6560,7 @@ class DocumentApiTest(unittest.TestCase):
       ),
       HydrationSection(
         title="くらし",
+        role="nav",
         items=(
           ("ライフスタイル", "/topic/lifestyle"),
           ("住まい・暮らし", "/topic/home"),
@@ -6574,7 +6575,7 @@ class DocumentApiTest(unittest.TestCase):
           <html>
             <body>
               <div class="shell">
-                <aside>left pane</aside>
+                <aside role="navigation">left pane</aside>
                 <main id="main-content"></main>
               </div>
               <script>
@@ -6608,6 +6609,7 @@ class DocumentApiTest(unittest.TestCase):
     mock_extract_site_specific_hydration_sections.return_value = [
       HydrationSection(
         title="くらし",
+        role="nav",
         items=(
           ("ライフスタイル", "/topic/lifestyle"),
           ("住まい・暮らし", "/topic/home"),
@@ -6626,8 +6628,8 @@ class DocumentApiTest(unittest.TestCase):
               </header>
               <main>
                 <div class="timeline">
-                  <div class="timeline__nav"></div>
-                  <div class="timeline__body">body</div>
+                  <div class="timeline__nav" role="navigation"></div>
+                  <div class="timeline__body" role="feed">body</div>
                 </div>
               </main>
               <script>
@@ -6665,6 +6667,7 @@ class DocumentApiTest(unittest.TestCase):
       ),
       HydrationSection(
         title="くらし",
+        role="nav",
         items=(
           ("ライフスタイル", "/topic/lifestyle"),
           ("住まい・暮らし", "/topic/home"),
@@ -6679,7 +6682,7 @@ class DocumentApiTest(unittest.TestCase):
           <html>
             <body>
               <main>
-                <div class="left-nav">急上昇</div>
+                <div class="left-nav" role="navigation">急上昇</div>
                 <div class="right-pane"></div>
               </main>
               <script>
@@ -6719,6 +6722,7 @@ class DocumentApiTest(unittest.TestCase):
       ),
       HydrationSection(
         title="くらし",
+        role="nav",
         items=(
           ("ライフスタイル", "/topic/lifestyle"),
           ("住まい・暮らし", "/topic/home"),
@@ -6733,7 +6737,7 @@ class DocumentApiTest(unittest.TestCase):
           <html>
             <body>
               <div class="shell">
-                <aside>left pane</aside>
+                <aside role="navigation">left pane</aside>
                 <main id="main-content"></main>
               </div>
               <script>
@@ -6778,7 +6782,7 @@ class DocumentApiTest(unittest.TestCase):
           <html>
             <body>
               <div class="shell">
-                <aside>
+                <aside role="navigation">
                   <section>
                     <a href="/trend">急上昇</a>
                   </section>
@@ -6839,7 +6843,7 @@ class DocumentApiTest(unittest.TestCase):
           <html>
             <body>
               <div class="shell">
-                <aside>
+                <aside role="navigation">
                   <section>
                     <a href="/trend">急上昇</a>
                   </section>

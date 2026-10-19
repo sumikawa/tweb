@@ -238,6 +238,7 @@
 - `tests.test_document_api` / `tests.test_js_runtime` に inline JSON、`__next_f`、network JSON 応答、loading shell 差し替えの回帰を追加した
 - `__next_f` については runtime 上の配列だけでなく inline script の `push(...)` 文字列も回帰対象に含め、source summary で `inline-chunk` を確認して note.com topic sidebar の categories / subCategories 再発を防ぐ
 - note.com の固定 API probe / retry / Python 再取得を削除した。ページが発行する通信の JSON は既存の runtime network collector で扱う。class static block の構文互換と、footer を残して消失した main の復元もサイト名に依存せず実装した
+- 本文・ナビの分類を `tweb/hydration_targets.py` へまとめ、URL 形式と特定 class 名による用途判定を削除した。HTML / ARIA、見出し・既存リンクとの対応、一覧構造、リンク密度、ナビに隣接する一意な空領域で判定する。曖昧な候補は既存 DOM を置換せず main 側へ補完する
 
 残っている残差:
 

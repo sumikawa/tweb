@@ -4280,7 +4280,7 @@ class JsRuntimeTest(unittest.TestCase):
       <html>
         <body>
           <main class="page">
-            <div class="nav-panel"></div>
+            <div class="nav-panel" role="navigation"></div>
             <div class="feed-body">
               <div class="loading-dots">
                 <div class="loading-dot"></div>
