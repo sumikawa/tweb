@@ -74,6 +74,8 @@
 ### 6. TLS / 証明書検証
 
 - [x] HTTPS は `requests` 標準の証明書検証を使い、明示的に無効化していない
+- [x] eMudhra / emSign の証明書漏洩対策として `certifi>=2026.10.19` を直接依存に指定した（2026-10-25）。根拠は [Python 公式の案内](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)。
+- `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` などで独自 CA bundle を指定している場合は、その証明書ストアも別途更新する。browser-render が使う外部ブラウザの証明書対策は、そのブラウザと OS の更新に従う。
 - [ ] 証明書エラー時の表示と失敗動作を定義する
 - [ ] ホスト名検証失敗、期限切れ、自己署名などを区別して扱えるようにする
 - [ ] 将来例外許可を入れる場合はセッション限定かつ明示確認付きにする

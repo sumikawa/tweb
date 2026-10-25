@@ -42,6 +42,10 @@ uv run python3 -m unittest tests.test_cli
 - `make clean` のように `uv` が不要な補助コマンドでは `PYTHON=python3.12` を優先する
 - `.git` 配下への書き込み失敗や ref lock 失敗は、repo 不具合ではなく環境権限の問題として扱う
 
+## 証明書依存の更新
+
+eMudhra / emSign 対策として `certifi>=2026.10.19` を必須にしています。`uv.lock` は Git 管理対象外のため、安全な最低バージョンは `pyproject.toml` に指定します。既存の開発環境では `uv lock --upgrade-package certifi` と `uv sync --locked` で更新してください。更新に使う uv は 0.13.4 以上、pip は 26.2.2 以上を使用します。根拠と独自 CA bundle の注意点は `docs/SECURITY.md` を参照してください。
+
 ## よく使う開発コマンド
 
 通常表示:
