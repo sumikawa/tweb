@@ -2,31 +2,6 @@
 
 このドキュメントは、`tweb` を開発・調査・保守するときの入口をまとめたものです。ユーザー向けの使い方は `README.md`、機能ごとの詳細方針は各 `docs/*.md` を参照してください。
 
-## 開発ワークフロー
-
-新規セッションでは、まず branch と worktree を作成します。
-
-```bash
-make create BRANCH=feature/example PYTHON=python3.12
-```
-
-作業後に worktree を削除:
-
-```bash
-make remove BRANCH=feature/example PYTHON=python3.12
-```
-
-マージ済み worktree をまとめて掃除:
-
-```bash
-make clean PYTHON=python3.12
-```
-
-- 既定の worktree パスはリポジトリ直下の `./wt-<branch>`
-- 必要なら `PATHNAME=...` と `BASE=...` を指定できる
-- 未マージでも強制的に消す場合は `FORCE=1` を使う
-- `main` は保護対象で、`make clean` の削除対象にしない
-
 ## `uv run` とキャッシュ
 
 Codex や sandbox 環境では `~/.cache/uv` の権限エラーを踏みやすいため、`uv run` が必要なコマンドは最初から一時ディレクトリへ逃がすのを基本にします。
@@ -38,13 +13,6 @@ uv run python3 -m unittest tests.test_cli
 ```
 
 また、フルテストは `make test` で同じ一時キャッシュ設定つきで実行できます。
-
-- `make clean` のように `uv` が不要な補助コマンドでは `PYTHON=python3.12` を優先する
-- `.git` 配下への書き込み失敗や ref lock 失敗は、repo 不具合ではなく環境権限の問題として扱う
-
-## 証明書依存の更新
-
-eMudhra / emSign 対策として `certifi>=2026.10.19` を必須にしています。`uv.lock` は Git 管理対象外のため、安全な最低バージョンは `pyproject.toml` に指定します。既存の開発環境では `uv lock --upgrade-package certifi` と `uv sync --locked` で更新してください。更新に使う uv は 0.13.4 以上、pip は 26.2.2 以上を使用します。根拠と独自 CA bundle の注意点は `docs/SECURITY.md` を参照してください。
 
 ## よく使う開発コマンド
 
