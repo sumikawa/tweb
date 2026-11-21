@@ -1,110 +1,122 @@
+[English](JS.md) | [日本語](JS.ja.md)
+
 # JS.md
 
-このドキュメントは、`tweb` における JavaScript 対応の実装状況と実装方針をまとめたものである。CLI / TUI からどう使うかの入口は `README.md`、セキュリティ上の TODO は `SECURITY.md` を参照する。
+This document describes JavaScript implementation status and policy in `tweb`. See `README.md` for CLI/TUI usage and `SECURITY.md` for security TODOs.
 
-## 基本方針
+## Basic policy
 
-- JavaScript 実行エンジンは quick.js を使う
-- 取得層は既存の `requests` ベース実装を再利用し、JavaScript 向けにも別系統の site-specific fetch は足さない
-- JS 対応は「一般的なページを壊れにくく読むための最小ブラウザ互換」を優先し、フルブラウザ互換は最初から目指さない
-- DOM 操作、埋め込み script 実行、最小ネットワーク API、再レンダリング整合性を段階的に広げる
-- 特定サイト向けの HTML 補完や API 直叩きは取得層に入れず、必要なら JavaScript 実行結果や汎用的なフォールバックとして扱う
-- user-visible な挙動や許可境界を変えたときは `README.md`、`PLAN.md`、`SECURITY.md` と同期する
+- JavaScript execution engine uses quick.js
+- Reuse the existing `requests`-based fetching implementation; do not add a separate site-specific fetching path for JavaScript.
+- For JS compatibility, we prioritize "minimum browser compatibility to read general pages without breaking them" and do not aim for full browser compatibility from the beginning.
+- Gradually expand DOM manipulation, embedded script execution, minimal network API, and re-render consistency
+- Do not add site-specific HTML supplementation or direct API calls to the fetching layer. Use JavaScript execution results or generic fallback when needed.
+- Synchronize user-visible behavior and permission-boundary changes with `README.md`, `PLAN.md`, and `SECURITY.md`.
 
-## 現在の実装状況
+## Current implementation status
 
-最初に結論を書くと、現状の `tweb` は「軽量な quick.js 実行環境としてはかなり広めに動く」が、「実ブラウザ同等」ではない。特に、対応済み API の中にも最小 shim として成立しているだけのものが含まれる。
+`tweb` currently supports a broad range of behavior for a lightweight quick.js environment, but it is not equivalent to a real browser. Some supported APIs are only minimal shims.
 
-### 対応済み
+### Supported
 
-#### 実行経路
+#### Execution paths
 
-- `tweb/js_runtime.py` に quick.js ベースのランタイムを持つ
-- Python API では `TWebDocument.execute_script()`、`execute_inline_scripts()`、`execute_embedded_scripts()` を使える
-- CLI では `--script` / `--script-file` で JavaScript を適用してから再レンダリングできる
-- TUI / CLI の通常経路では埋め込み script を実行してから表示する
-- `--browser-render auto|always` を指定したときは、quick.js だけで崩れるリモートページに browser-render fallback を使える
-- `auto` は `main` 消失や明確な client-render failure だけでなく、quick.js 実行後も loading placeholder が残る場合にも fallback 対象にする
-- browser-render fetcher は現状 `chrome` provider を実装し、`execute_embedded_scripts(..., browser_render_fetcher=...)` で差し替え注入できる
-- browser-render fetcher の注入面は `BrowserRenderRequest(target, provider, timeout)` と `BrowserRenderResult(content, source, headers, status_code)` を共通 contract とし、Cookie bridge・timeout・empty DOM 判定を fetch 層でまとめて扱う
-- debug log の `browser-render decision` には `trigger=auto-fallback|manual-retry` と `failure_class=...` が出るので、救済経路へ進んだ理由を切り分けやすい
-- quick.js runtime には既定のメモリ制限があり、limit 超過は明示的な `JavaScriptRuntimeError` として返す
-- `tweb.audit` は browser-render fallback を診断用途に固定利用し、代表20サイトで `never` と `always` の差分を機械比較できる
-- audit render は子プロセス隔離なので、QuickJS の crash/segfault を `quickjs_error` として集計しつつ残りサイトを継続できる。internal render subprocess は `fetch` / `parse` / `execute_embedded_scripts` / `snapshot` など直前 phase を stderr に残すため、`exit -11` でもどこで落ちたかを追いやすい
-- 巨大 inline hydration script、特に `window.__data = JSON.parse("...")` のような root payload は raw HTML 側から先に回収し、同名 root を runtime collector で再度 `JSON.stringify` しない
-- webpackJsonp 系 bundle が quick.js の compile-time `stack underflow` で止まる場合は、問題の module だけを局所的に前処理し、それでもだめな object entry だけを no-op 化して残りの bundle 実行を継続する
-- webpackJsonp の `[` / `{` 対応は regex、template literal、comment をまたぐ大きい bundle でも lenient に切り出し、bundle 全体が読める限り module 登録を継続する
+- Have quick.js based runtime on `tweb/js_runtime.py`
+- You can use `TWebDocument.execute_script()`, `execute_inline_scripts()`, `execute_embedded_scripts()` in Python API
+- In CLI, you can apply JavaScript and re-render with `--script` / `--script-file`
+- In the normal TUI/CLI route, the embedded script is executed and then displayed.
+- When specifying `--browser-render auto|always`, you can use browser-render fallback for remote pages that break with just quick.js.
+- `auto` is subject to fallback not only when `main` disappears or clear client-render failure, but also when loading placeholder remains even after quick.js execution
+- browser-render fetcher currently implements `chrome` provider and can be replaced and injected with `execute_embedded_scripts(..., browser_render_fetcher=...)`
+- The browser-render fetcher injection side uses `BrowserRenderRequest(target, provider, timeout)` and `BrowserRenderResult(content, source, headers, status_code)` as a common contract, and handles cookie bridge, timeout, and empty DOM judgment all at once in the fetch layer.
+- The debug log's `browser-render decision` includes `trigger=auto-fallback|manual-retry` and `failure_class=...`, making it easier to identify why fallback was used.
+- The quick.js runtime has a default memory limit and reports violations as an explicit `JavaScriptRuntimeError`.
+- `tweb.audit` uses browser-render fallback specifically for diagnostics, mechanically comparing `never` and `always` on 20 representative sites.
+- Audit rendering runs in isolated subprocesses, allowing remaining sites to continue after QuickJS crashes/segfaults recorded as `quickjs_error`. Internal render subprocesses write their last phase, such as `fetch` / `parse` / `execute_embedded_scripts` / `snapshot`, to stderr so even `exit -11` failures can be localized.
+- Collect large inline hydration scripts, especially root payloads such as `window.__data = JSON.parse("...")`, directly from raw HTML first. Do not `JSON.stringify` the same root again in the runtime collector.
+- When webpackJsonp bundles hit quick.js compile-time `stack underflow` errors, locally preprocess only problematic modules, replace only remaining failing object entries with no-ops, and continue executing the rest of the bundle.
+- Leniently extract webpackJsonp `[` / `{` boundaries even in large bundles containing regexes, template literals, and comments, continuing module registration as long as the overall bundle remains readable.
 
-#### DOM の基本操作
+#### Basic DOM operations
 
 - `document.title` / `document.body` / `document.documentElement` / `document.currentScript`
 - `querySelector` / `querySelectorAll` / `matches` / `closest`
 - `getElementById` / `getElementsByTagName` / `getElementsByClassName`
 - `textContent` / `innerHTML` / `outerHTML`
-- 属性参照と更新、`classList`、`dataset`
+- Attribute access and updates, `classList`, `dataset`
 - `createElement` / `createElementNS` / `createTextNode` / `createComment` / `createDocumentFragment`
 - `appendChild` / `append` / `prepend` / `insertBefore` / `replaceChildren` / `replaceWith` / `remove`
 - `cloneNode` / `contains` / `isEqualNode` / `getRootNode()`
-- `createRange` / `createTreeWalker` / `getSelection` の最小実装
-- `getComputedStyle()` の最小実装
+- Minimum implementation of `createRange` / `createTreeWalker` / `getSelection`
+- Minimum implementation of `getComputedStyle()`
 
-#### script 実行とイベント
+#### Script execution and events
 
-- inline script を順番に実行できる
-- 外部 script 読み込みに対応している
-- 動的に挿入した `<script src=...>` の読み込みに対応している
-- `async` / `defer` / `type="module"` は、即時 inline script の後段へ回す最小動作を持つ
-- 複数 script 間で `window` のグローバル状態を共有する
-- `DOMContentLoaded` / `readystatechange` / `load` / `pageshow` / `visibilitychange` / `focus` を最小限 dispatch する
-- 本文・link・control が十分な静的 portal は `load` / `pageshow` を省略して `DOMContentLoaded` まで実行し、jQuery ready 内の取得処理は保持する。400 link以上の超高密度 page は ready timer も省略する
+- Execute inline scripts in order.
+- External script loading is supported.
+- Support loading dynamically inserted `<script src=...>`.
+- `async` / `defer` / `type="module"` have minimal scheduling support that runs them after immediate inline scripts.
+- Share `window` global state across scripts.
+- Minimally dispatch `DOMContentLoaded` / `readystatechange` / `load` / `pageshow` / `visibilitychange` / `focus`
+- For static portals with sufficient body content, links, and controls, skip `load` / `pageshow` and run through `DOMContentLoaded`, preserving fetches inside jQuery ready callbacks. For extremely dense pages with at least 400 links, also skip ready timers.
 - `setTimeout` / `clearTimeout` / `setInterval` / `clearInterval`
 - `requestAnimationFrame` / `requestIdleCallback` / `queueMicrotask`
-- 直近の timer / microtask を drain するが、遠い future timer は無限に待たない
+- Drain near-term timers/microtasks without waiting indefinitely for distant future timers.
 
-#### 外部 script cache の方針
+#### External script cache policy
 
-- 外部 script の cache は性能改善の候補だが、最初からブラウザ級の永続 HTTP cache を再現する前提では持たない
-- external script cache は `diskcache` に保存し、同じ script を process をまたいでも再取得しないことを狙う
-- cache key は `URL` を基本にし、レスポンスが `Vary` を返したときだけその request 条件で variant を分ける
-- `Cache-Control` / `ETag` / `Last-Modified` を無視した長寿命キャッシュは、古い bundle や deploy 切り替えを踏み続ける危険があるため避ける
-- 対象はまず `GET` の外部 script に限定し、runtime 中の一般 `fetch` / XHR JSON 応答まで同じ cache に広げない
-- `--debug` では script cache の hit / miss / revalidate / bypass を追えるようにし、速度改善と挙動差の切り分けをしやすくする
-- 必要なら `--no-script-cache` のような無効化手段を持てるようにし、live repro や原因切り分け時に強制再取得できるようにする
+- External script caching is a performance option, but full browser-grade persistent HTTP caching is not an initial assumption.
+- Store the external script cache in `diskcache` to avoid fetching the same script again across processes.
+- The cache key is based on `URL`, and the variant is separated based on the request condition only when the response returns `Vary`.
+- Avoid long-lived caches that ignore `Cache-Control` / `ETag` / `Last-Modified` as they run the risk of continuing to use old bundle and deploy switches.
+- Initially limit the cache to `GET` external scripts; do not extend it to general runtime `fetch` / XHR JSON responses.
+- `--debug` allows you to track hit / miss / revalidate / bypass of script cache, improving speed and making it easier to isolate behavior differences.
+- Provide a bypass such as `--no-script-cache` if needed, allowing forced refetches during live reproduction and diagnosis.
 
-#### Phase 12 で追加した性能面
+#### Performance aspects added in Phase 12
 
-- `document.execute_embedded_scripts()` は phase 別の timing/count を `javascript_debug()` と debug log に残し、script eval / page event dispatch / async drain / style rebuild / hydration / browser-render 比較を追える。加えて `slow_scripts` で遅い script 上位を持ち、巨大 bundle 1 本が total time を支配しているかを live site で切り分けやすくした
-- `querySelector` / `querySelectorAll` / subtree selector は mutation epoch 単位の cache を持ち、同じ selector を同一 DOM 状態で繰り返す bundle の固定費を落とせる。 hit/miss は `selector_query_cache_hits` / `selector_query_cache_misses` として `javascript_debug()` に残す
-- `getElementById` / `getElementsByTagName` / `getElementsByClassName` は `querySelector` / `querySelectorAll` へのフォールバックではなく、bridge 側の専用 tree traversal fast path を使う。 jQuery / jQuery UI 系の bundle はこの 3 API を高頻度に叩くため、selector engine を毎回通さない方が安定して効く
-- `compareDocumentPosition()` は document 全体の平坦化ではなく ancestor/sibling ベースで比較し、detached node 同士では軽く `DOCUMENT_POSITION_DISCONNECTED` を返す。 jQuery 3 の support probe がここで止まると後続 bundle 全体が進まないため、基本 DOM 互換として先に吸収する
-- jQuery が読まれた後は legacy shorthand shim を自動で当て、`$(window).load(fn)` のような古い event shorthand を `on('load', fn)` へ逃がす。 `$('#node').load('/fragment.html', ...)` の Ajax 版はそのまま維持する
-- 無視可能な外部scriptエラーの後にQuickJS runtimeを作り直す場合、成功済みのjQuery本体は定数bootstrapと同様に再実行する。クリーンruntimeへライブラリglobalを戻し、後続scriptを `$ is not defined` で連鎖停止させない。jQuery pluginやDOM操作scriptは再実行対象に広げない
-- script 実行前後には `id` 由来の window named property を同期し、`<div id="emergency">` を `window.emergency` / bare `emergency` として参照する旧来 script を止めにくくする。既存の built-in や明示代入済み global は上書きしない
-- `gcse:searchbox-only` のような custom-element search placeholder は、runtime が実際の `<input>` / submit button をまだ差し込めなくても synthetic form control として見せる。 Google Custom Search のように remote script 依存で検索 UI が遅延生成される page でも、監査上の入力系 control を落としにくくする
-- `document.write()` / `document.writeln()` は実行中 script の直後へ HTML fragment を挿入できる。挿入 fragment 内の外部 script は parser-blocking として source を取得し、現在の QuickJS context で同期評価する。個別 script の取得・評価失敗は後続 parser-inserted script を止めず、Google CSE の placeholder や legacy dependency chain を後続の visible DOM 収集へつなげる
-- detached document と `iframe.contentDocument` は `open()` / `write()` / `writeln()` / `close()` を持ち、広告・計測 script が一時 document へ markup を書く bootstrap を止めにくくする
-- `Node.prototype.contains()` は prototype target が個別 method を持たない場合も self/descendant traversal へ fallback し、MutationObserver callback の node containment check を継続できる
-- 可視本文がすでに十分ある page では、単独の `Loading...` / `NOTICE Loading...` placeholder を埋め込み script 後に prune する。 client shell の残骸だけが QuickJS 結果へ混ざって `alternate_content_branch` 扱いになるのを避ける
-- `XMLHttpRequest` は `responseType='document'` に加えて `overrideMimeType()` と `responseXML` を持ち、same-origin partial HTML を読み込んで header / footer / topics を差し込む政府系サイトの callback を止めにくくした
-- XHR の `responseText` は bytes から charset-aware に復元し、`text/html` が charset 無しで返る partial HTML でも `overrideMimeType('...;charset=UTF-8')` と meta charset を尊重して文字化けを避ける
-- page event dispatch は QuickJS の `set_time_limit()` を使わず、既存の async drain budget / preflight / pending-job 上限で守る。 Python bridge を使う `querySelectorAll` 系 callback は time limit と両立せず、通常監査パスで hydration が途中停止するため
-- delayed script が多い page だけでなく、raw HTML の時点で本文・link・control が十分ある静的ポータルでは、expensive page event dispatch 自体を skip できる。 `load` / `pageshow` 後の UI polish や animation を待つより、既に取れている本文を保持して timeout を避ける方が quality/perf の両面で有利なため
-- DOM mutation 後の `parentNode` / `removeChild` / `insertBefore` 系は `_tweb_parent` を保持して tree 全探索へ落ちにくくしている。 page event や jQuery callback 内で親要素探索が多いサイトでも、mutation-heavy path の固定費を減らせる
-- `TextNode` の内容更新や text node の detach のような text-only mutation では、selector query cache epoch と style context cache を落とさない。 selector/style に無関係な本文差し替えだけで `querySelector(All)` の結果を毎回捨てるのを避け、mutation-heavy app bundle の固定費を下げる
-- Splide のように mount 前だけ `visibility:hidden` を付ける carousel では、text-rich かつ未初期化の container を単純な hidden 扱いにしない。初期 CSS の都合で本文が丸ごと invisible 判定されるのを避ける
-- external script は既定の user cache dir に `diskcache` ベースの永続 cache を持ち、`URL` を基本キーにして `Vary` があるときだけ request 条件で variant を分ける
-- cache entry は `Cache-Control` / `ETag` / `Last-Modified` を見て短い再検証を行い、`no-store` は保持しない
-- crash safety 用の quickjs preflight は同一条件の結果を runtime 内で再利用し、probe に渡す prior script 群も直近数本と文字数上限に絞って payload 膨張を避ける
-- `_drain_async_work()` は DOM/network 変化のない timer 進行だけが続く場合に早期停止し、無駄な待ちを減らす
-- raw 200 link以上の静的リッチ page は1回の async drain を8 timerに制限する。timer実行直前のstep・DOM mutation数をdebug logへ残し、native crash時の直前段階を追えるようにする
-- post-load 後も本文が極端に sparse な page は `250ms -> 1s -> 5s -> 10s` の段階的 horizon で pending timer を排水し、途中 callback の互換エラーを隔離して次段へ進む。本文がすでに読める動的 page でも、DOM mutation と ready timer が残る場合だけ `1s` 上限の短い追加排水を行う
-- closed `select` の visible text は選択 option だけを採用し、未指定の single-select は先頭 option、multiple-select は明示 `selected` だけを本文として扱う
-- hydration 後の初期 body 復元は、mount 後 DOM が初期 shell より 3 個以上多い form controls を持つ場合は抑止する。Vue のように `el` 自体を描画済み root へ置換して元 id を消す app を client failure と誤認し、正常な検索 UI を空 shell へ戻さないため
-- style cache は引き続き全体 rebuild だが、invalidations / rebuilds 自体を計測できるようになったため、次の局所化改善を定量比較できる
-- static-page 判定用の document metrics cache は delayed script skip / expensive page event skip だけでなく、post-script の loading placeholder / client-failure shell prune にも phase 単位で再利用する。大きい DOM で同じ visible body / link / control 集計を繰り返さず、generic cleanup コストを抑える
-- substantial body がすでに読める page でも、runtime hint や hidden content hint があり visible links がまだ少ないときは、raw HTML 上の long anchors を `Recovered Links` section として lazy に再利用できる。hidden DOM 全量復元より軽い経路で feed/discovery branch の link shortfall を補い、`jaxa-home` / `yahoo-news-jp-home` 系の minor gap を詰めやすくする
+- `document.execute_embedded_scripts()` records phase timings/counts in `javascript_debug()` and debug logs for script evaluation, page events, async drain, style rebuilding, hydration, and browser-render comparison. `slow_scripts` lists the slowest scripts, helping determine whether 1 large bundle dominates total time on a live site.
+- `querySelector` / `querySelectorAll` / subtree selector has a cache for each mutation epoch, which reduces the fixed cost of bundles that repeat the same selector in the same DOM state. Hit/miss is left in `javascript_debug()` as `selector_query_cache_hits` / `selector_query_cache_misses`
+- `getElementById` / `getElementsByTagName` / `getElementsByClassName` use dedicated bridge tree-traversal fast paths rather than falling back to `querySelector` / `querySelectorAll`. jQuery/jQuery UI bundles call these 3 APIs frequently, so avoiding repeated selector-engine calls provides consistent gains.
+- `compareDocumentPosition()` compares based on ancestor/sibling instead of flattening the entire document, and easily returns `DOCUMENT_POSITION_DISCONNECTED` between detached nodes. If jQuery 3's support probe stops here, the entire subsequent bundle will not proceed, so it will be absorbed first as basic DOM compatibility.
+- After jQuery loads, automatically apply a legacy shorthand shim that routes old event shorthand such as `$(window).load(fn)` to `on('load', fn)`. Preserve the Ajax form `$('#node').load('/fragment.html', ...)`.
+- When rebuilding QuickJS after an ignorable external-script error, rerun the successfully loaded jQuery core like constant bootstraps. Restore library globals in the clean runtime so subsequent scripts do not fail in succession with `$ is not defined`. Do not extend replay to jQuery plugins or DOM-mutating scripts.
+- Synchronize window named properties derived from `id` before and after script execution, allowing legacy scripts to reference `<div id="emergency">` as `window.emergency` or bare `emergency`. Do not overwrite built-ins or explicitly assigned globals.
+- A custom-element search placeholder like `gcse:searchbox-only` appears as a synthetic form control even though the runtime cannot yet insert an actual `<input>` / submit button. Even on pages where the search UI is delayed due to remote script dependence, such as Google Custom Search, it is difficult to lose the input system control for audit purposes.
+- `document.write()` / `document.writeln()` can insert an HTML fragment immediately after the script being executed. The external script inside the inserted fragment gets the source as parser-blocking and evaluates it synchronously in the current QuickJS context. Failure to obtain and evaluate individual scripts does not stop subsequent parser-inserted scripts, and connects Google CSE placeholders and legacy dependency chains to subsequent visible DOM collection.
+- Detached documents and `iframe.contentDocument` support `open()` / `write()` / `writeln()` / `close()` so bootstraps that write ad or analytics markup into temporary documents can continue.
+- `Node.prototype.contains()` can fallback to self/descendant traversal even if prototype target does not have an individual method and continue node containment check of MutationObserver callback.
+- On pages already containing sufficient visible content, prune standalone `Loading...` / `NOTICE Loading...` placeholders after embedded scripts. This prevents leftover client shells from causing `alternate_content_branch` classification.
+- `XMLHttpRequest` has `overrideMimeType()` and `responseXML` in addition to `responseType='document'`, making it difficult to stop callbacks from government sites that load the same-origin partial HTML and insert header / footer / topics.
+- `responseText` of XHR is restored from bytes to charset-aware, and `overrideMimeType('...;charset=UTF-8')` and meta charset are respected even in partial HTML where `text/html` is returned without charset to avoid garbled characters.
+- Protect page event dispatch with existing async drain budgets, preflight, and pending-job limits rather than QuickJS's `set_time_limit()`. Callbacks such as `querySelectorAll` that use the Python bridge are incompatible with time limits and would interrupt hydration on normal audit paths.
+- Skip expensive page event dispatch not only on pages with many delayed scripts, but also on static portals whose raw HTML already contains sufficient body content, links, and controls. Preserving available content and avoiding timeouts improves both quality and performance compared with waiting for UI polish or animation after `load` / `pageshow`.
+- The `parentNode` / `removeChild` / `insertBefore` series after DOM mutation retains `_tweb_parent` to prevent it from falling into a full tree search. Even sites that often search for parent elements in page events and jQuery callbacks can reduce the fixed costs of mutation-heavy paths.
+- Text-only mutations such as updating the contents of `TextNode` or detaching a text node do not drop the selector query cache epoch and style context cache. Avoid discarding the result of `querySelector(All)` every time just by replacing the body unrelated to selector/style, and reduce the fixed cost of mutation-heavy app bundle
+- In carousel, which adds `visibility:hidden` only before mounting, like Splide, text-rich and uninitialized containers are not simply treated as hidden. Avoid the entire body being judged as invisible due to initial CSS
+- External scripts use a persistent `diskcache`-based cache in the default user cache directory. Use `URL` as the base key and separate request variants only when `Vary` is present.
+- cache entry looks at `Cache-Control` / `ETag` / `Last-Modified` and does a short revalidation, but does not keep `no-store`
+- Reuse quickjs crash-safety preflight results under identical conditions within the runtime. Limit prior scripts passed to the probe to a few recent scripts and a character budget to avoid oversized payloads.
+- `_drain_async_work()` stops early when only timer progress without DOM/network changes continues, reducing unnecessary waits
+- For static-rich pages with at least 200 raw links, limit 1 async drain to 8 timers. Log the step and DOM mutation count immediately before timer execution to identify the last stage before a native crash.
+- For pages whose body remains extremely sparse after load, drain pending timers through the staged horizons `250ms -> 1s -> 5s -> 10s`, isolating callback compatibility errors before proceeding. Even on dynamic pages with readable content, perform a short additional drain capped at `1s` only when DOM mutations and ready timers remain.
+- The visible text of closed `select` uses only the selected option, the unspecified single-select uses the first option, and the multiple-select uses only the explicit `selected` as the body.
+- Suppress restoration of the initial body after hydration when the mounted DOM has at least 3 more form controls than the initial shell. This avoids mistaking apps such as Vue, which replace `el` itself with a rendered root and remove its original ID, for client failures and reverting a working search UI to an empty shell.
+- Style caches still rebuild globally, but invalidation/rebuild measurements now support quantitative comparison of future localized improvements.
+- Reuse the document metrics cache per phase not only for delayed-script and expensive-event skipping, but also for pruning post-script loading placeholders and client-failure shells. Avoid repeatedly aggregating visible body/link/control metrics on large DOMs and reduce generic cleanup costs.
+- Even when substantial body content is readable, pages with runtime/hidden-content hints and few visible links can lazily reuse long raw-HTML anchors in a `Recovered Links` section. This lighter alternative to full hidden-DOM restoration fills feed/discovery link gaps, including minor gaps on `jaxa-home` / `yahoo-news-jp-home`.
 
-#### 取得とデータ API
+#### Phase 17 execution efficiency
+
+- `execute_embedded_scripts(render_efficiency=True)` uses a generic resource policy by default. `navigator.sendBeacon` will be blocked regardless of the destination. Block communications with `telemetry` / `beacon` / `analytics` in the URL path segment and fetch/XHR with known extensions for images, videos, audio, and fonts before fetching.
+- Prioritize body fetching: preserve fetch/XHR requests with `api` segments or `.json` / `.html` / `.htm` extensions, and allow unknown URLs as content candidates. Do not block scripts based only on media extensions. Apply telemetry classification at the fetching boundary before cache lookup, including prefetch. Do not classify before fetching solely from MIME types or claim to detect arbitrary tracking traffic.
+- During post-load async drain, inspect the body, links, and input state in visible `main` / `article` / `role=main` every 8 timers. Finish with `body-stable` when there are at least 200 characters and paragraph/heading structure, state remains stable for at least 500ms of virtual time, and content-candidate requests do not increase. Process microtasks and currently runnable timers first.
+- Limit probes to 20,000 nodes / 200,000 characters; exceeding the limit must not count as stable. Use CSS visibility and do not finish early for content under hidden ancestors or loading-only content. Inferred body-region termination, forced interruption of normal script evaluation, and early completion of all hydration remain outside scope.
+- Leave the resource judgment and async drain termination reason in `javascript_debug()["render_efficiency"]` and debug log. Text candidates are not classifications that guarantee actual text contributions. Existing button communication authority takes priority, and permission denial is not canceled even with `render_efficiency=False`
+- Pause efficiency optimizations during explicit button operations; do not suppress requests permitted by `network`. Preserve `dom` network denial.
+- While verifying fetch/XHR preservation, also fixed an existing issue where a NUL byte appended to responses with base64 padding caused `Response.json()` to fail.
+
+#### Fetching and data APIs
 
 - `fetch`
 - `XMLHttpRequest`
@@ -114,167 +126,167 @@
 - `Blob` / `File` / `FileReader`
 - `ReadableStream` / `WritableStream` / `TransformStream`
 - `TextEncoder` / `TextDecoder`
-- `document.cookie`: HTTP(S) 文書での代入を requests session の CookieJar に反映し、domain / path / Secure / 有効期限に従って再取得へ引き継ぐ
+- `document.cookie`: Reflect the assignment in the HTTP(S) document to the CookieJar of the requests session and carry it over to reacquisition according to domain / path / Secure / expiration date
 
-#### 周辺 API
+#### Supporting APIs
 
 - `window` / `location` / `navigator` / `history` / `navigation` / `console`
-- 初期 script / timer の `location.reload()` は実行後に同じ session で GET 再取得し、新しい文書の script を実行する。1 回のページ読み込みにつき再取得は最大 3 回で、上限到達は debug log に記録する。button click の reload は既存の navigation policy に従う
-- `EventTarget` / `Event` / `CustomEvent` / `MouseEvent` / `KeyboardEvent` / `PointerEvent` など主要イベント型
+- After initial script/timer `location.reload()` calls, refetch with GET using the same session and execute the new document's scripts. Limit refetches to 3 per 1 page load and log when the limit is reached. Button-click reloads follow the existing navigation policy.
+- Major event types such as `EventTarget` / `Event` / `CustomEvent` / `MouseEvent` / `KeyboardEvent` / `PointerEvent`
 - `localStorage` / `sessionStorage`
-- `indexedDB` の最小実装
+- Minimum implementation of `indexedDB`
 - `matchMedia`
-- `MutationObserver` / `IntersectionObserver` の最小実装
-- `Intl` の一部
+- Minimum implementation of `MutationObserver` / `IntersectionObserver`
+- Part of `Intl`
 
-#### hydration data フォールバック
+#### Hydration data fallback
 
-- `tweb/runtime_data.py` の generic collector が、`window.__NUXT__` / `__NEXT_DATA__` / `__INITIAL_STATE__` / `__APOLLO_STATE__` / `__PRELOADED_STATE__` の既知 root、inline JSON script、`__next_f` などの chunk 配列、runtime 中の `fetch` / XHR JSON 応答を同じ出口へ正規化する
-- Apollo normalized cache の `__ref` は `tweb/apollo.py` で共通解決する。既知の `__APOLLO_STATE__` root、bootstrap 内の同名 cache、`ROOT_QUERY` 等の root を持つ cache を対象とし、通常の JSON にある同名 field は参照として解釈しない。`ROOT_QUERY` があればそこから到達するデータを採用し、無関係な cache entry を本文に混ぜない。循環参照・参照切れは `None` とし、深さ16・処理対象10,000値までで打ち切る。入力 cache は変更しない
-- inline script に直接埋め込まれた JSON literal や `[{type,value,children}]` 形式の text fragment も generic collector が拾い、short shell ページでは recovered text として本文へ差し込める
-- これは Web 側で一般的な埋め込み状態であり、`tweb` 独自概念ではない
-- `tweb` 独自なのは、本文が空または loading 表示しかない場合に、その埋め込み状態から見出し・リンク・セクション候補を抽出して補完表示へ注入するフォールバックである
-- この処理は特定サイト専用ではなく、`HydrationSection` / `HydrationLink` / 補助テキストへの汎用構造抽出として実装している
-- 本文がすでに十分取れているページでは、UUID・内部 URL・日時・短い UI ラベルのような low-signal な hydration 値では補完を発火させない
-- 補完後は `document.hydration_debug()` で、どの source を採用したか、`confidence` が何か、site-specific fallback を併用したかを確認できる
-- 1000文字以下でもlinkと入力controlを持つcompactな機能UIは、未表示のhydration値より優先して保持し、app mountを置換しない
-- リンクの補完には payload の明示 URL / path / pathname と、同じラベルに対して一意な既存 DOM anchor を使う。`urlname` / `key` / `engName` / `parentDir` / `slug` からサイト独自の route は組み立てない。ラベルが重複して異なる URL を指す場合も推測しない
-- URL を持たない item はテキストとして保持し、長い記事タイトルが複数ある section は recovered text として回収する。navigation role を持つ section は本文候補の後に置き、ナビ専用の挿入先がなくても記事候補を先に表示する。CSS class / style 値や Flight の property 参照文字列を補助テキストへ混ぜない
-- 本文・ナビの補完先は `tweb/hydration_targets.py` で判定する。`main` / `article` / `nav`、ARIA の `main` / `feed` / `tabpanel` / `navigation`、見出し付き一覧やリンク密度を使い、`timeline__body` などの class 名や `/topic/` / `/n/` の URL 形式で用途を決めない
-- section の分類は明示 role を優先し、role がない場合はナビ領域の `aria-label` / `aria-labelledby` / 見出し・既存リンクとの対応を使う。所属が分からない section は本文側へ残す。ナビ項目を unstructured link として本文へ重複挿入しない
-- 明示された空の本文領域、またはナビの隣に一意に残る空領域へ補完する。識別できない空 div、同順位の複数候補、構造を読み切れない大きな候補では `main` / `role=main`（なければ body）へ追記し、既存領域を置換しない。構造推定は256ノード・各ノード64子までに制限する
-- `hidden` / `aria-hidden` / inline style で隠された候補、header / footer / ARIA banner / contentinfo のナビ、新旧の入力 UI を空の補完先として選ばない。これらの判定は外部 CSS の完全な可視性計算や、多義的な pane の意味推定を保証するものではない
-- note.com の home / topic も inline Flight、既知 root、ページ自身の fetch / XHR 応答を使う汎用 collector で読む。固定 API endpoint の合成、専用 probe / poll / retry、Python による API 再取得は削除した。ページ自身の通信と非同期処理は既存の runtime / session / drain 経路で扱う
-- QuickJS が解釈できない class static block は、同じ位置の private static field の arrow initializer に変換して実行する。初期化順・lexical `this` / `super` と外部からの非可視性を維持し、文字列・コメント・正規表現の本文は変換しない。`class_static_block_rewrite_scripts` と debug log で変換の有無を確認できる
-- 十分な初期本文がある `main` が消失し、短い header / footer だけが残る場合も汎用の初期レイアウト復元対象にする。新たな入力 UI が作られた場合や、十分な別本文がある場合はこの消失判定で戻さない
+- The generic collector for `tweb/runtime_data.py` is the known root for `window.__NUXT__` / `__NEXT_DATA__` / `__INITIAL_STATE__` / `__APOLLO_STATE__` / `__PRELOADED_STATE__`, inline JSON script, chunk arrays such as `__next_f`, and `fetch` / XHR JSON during runtime. Normalize responses to the same exit
+- `__ref` of Apollo normalized cache is commonly resolved with `tweb/apollo.py`. Targets caches with roots such as known `__APOLLO_STATE__` root, cache with the same name in bootstrap, and `ROOT_QUERY`, and does not interpret fields with the same name in normal JSON as references. If `ROOT_QUERY` exists, use the data that arrives from there and do not mix irrelevant cache entries with the main text. Circular reference/reference break shall be `None`, and shall be terminated at depth 16 and 10,000 values to be processed. Do not change input cache
+- The generic collector also reads directly embedded JSON literals and `[{type,value,children}]` text fragments from inline scripts, inserting recovered text into short shell pages.
+- This is a common form of embedded web state, not a concept specific to `tweb`.
+- The `tweb`-specific behavior is a fallback that extracts heading, link, and section candidates from embedded state and inserts them as supplementary content when the body is empty or contains only loading placeholders.
+- This processing is generic structural extraction into `HydrationSection` / `HydrationLink` / supplementary text, rather than site-specific behavior.
+- Do not trigger supplementation from low-signal hydration values such as UUIDs, internal URLs, dates, or short UI labels when sufficient body content is already available.
+- After supplementation, use `document.hydration_debug()` to inspect selected sources, `confidence`, and whether site-specific fallback was used.
+- A compact functional UI with links and input controls, even if it is less than 1000 characters, takes precedence over undisplayed hydration values and does not replace app mounts.
+- Supplement links using explicit payload URL/path/pathname fields or existing DOM anchors uniquely matching a label. Do not construct site-specific routes from `urlname` / `key` / `engName` / `parentDir` / `slug`. Do not guess when identical labels point to different URLs.
+- Items without URLs are retained as text, and sections with multiple long article titles are collected as recovered text. A section with a navigation role is placed after the body text candidates, and the article candidates are displayed first even if there is no navigation-specific insertion destination. Do not mix CSS class / style values or Flight property reference strings into supplementary text
+- Determine body/navigation supplementation targets in `tweb/hydration_targets.py`. Use `main` / `article` / `nav`, ARIA `main` / `feed` / `tabpanel` / `navigation`, headed lists, and link density; do not infer purpose from classes such as `timeline__body` or URL patterns `/topic/` / `/n/`.
+- Prioritize explicit section roles. Without a role, use navigation-region `aria-label` / `aria-labelledby` and correspondence with headings/existing links. Keep unclassified sections in body content, and do not duplicate navigation items as unstructured body links.
+- Supplement explicit empty body regions or a uniquely identifiable empty region beside navigation. For unknown empty divs, equally ranked candidates, or large structurally ambiguous candidates, append to `main` / `role=main` (or body) without replacing existing content. Limit structural inference to 256 nodes and 64 children per node.
+- Do not select hidden candidates under `hidden` / `aria-hidden` / inline styles, header/footer/ARIA banner/contentinfo navigation, or existing/new input UIs as empty supplementation targets. These checks do not guarantee full external-CSS visibility calculation or semantic inference of ambiguous panes.
+- Read note.com's home/topic pages through the generic collector using inline Flight, known roots, and the page's own fetch/XHR responses. Removed fixed API endpoint synthesis, dedicated probes/polling/retries, and Python API refetches. Handle page-issued requests and async work through existing runtime/session/drain paths.
+- A class static block that QuickJS cannot interpret is converted to an arrow initializer of a private static field in the same position and executed. Maintains initialization order and lexical `this` / `super` and invisibility from the outside, and does not convert the text of strings, comments, and regular expressions. You can check whether there is conversion with `class_static_block_rewrite_scripts` and debug log
+- Generically restore the initial layout when `main` with sufficient initial content disappears and leaves only a short header/footer. Do not restore on this basis when a new input UI or sufficient alternative content exists.
 
-#### `site_specific.py` の現在位置
+#### Current position of `site_specific.py`
 
-- `tweb/site_specific.py` は「サイト名ベースの例外集」であり続けるのではなく、generic 側へまだ昇格しきれていない残差を一時的に置く場所として扱う
-- 現在残るのは、カクヨムの作品を Apollo cache から選び、目次 schema を section へ変換し、episode URL を生成する処理だけである。Apollo 参照解決と disclosure への注入は汎用側に置く。note.com の専用 fetch / データ変換処理はない
+- `tweb/site_specific.py` does not continue to be a "site name-based exception collection", but is treated as a temporary location for residuals that have not been promoted to the generic side yet.
+- Only selecting Kakuyomu works from the Apollo cache, converting table-of-contents schemas into sections, and generating episode URLs remain site-specific. Apollo reference resolution and disclosure injection are generic. There is no dedicated note.com fetch/data-conversion path.
 
-#### 現在の残差を failure class で見る
+#### Current residual issues by failure class
 
 - disclosure / accordion:
-  `HydrationSection` を見出し一致で hidden panel や `aria-controls` 付き button に差し込む generic disclosure 補完を使う。site-specific section に加え、generic collector が抽出した section も同じ経路で補完する。既存のテキスト・入力欄・リンク・メディアを持つ panel と空の section は補完対象から外す。
-  本文が十分読めており、先に得た section がすべて対応する panel に補完済みなら、URL に依存せず generic collector の追加実行を省く。未対応 section があれば通常の収集を続ける。以前の Kakuyomu episode URL 限定判定は削除し、debug reason は `body-already-readable-with-disclosure-sections` とした。Kakuyomu の Apollo 参照解決は `tweb/apollo.py` に移し、目次 schema の解釈と episode URL の生成規則を site-specific 側に残す。runtime cache は対象作品から到達する entity の必要 field だけを読み、1 entity の転送は200,000文字以内に制限する。複数候補の曖昧解消や role ベースの対象選別も今後の課題とする。
+  Use generic disclosure completion to insert `HydrationSection` into hidden panel or button with `aria-controls` by matching the heading. In addition to site-specific sections, sections extracted by the generic collector are also complemented using the same route. Panels with existing text, input fields, links, and media and empty sections are excluded from completion.
+  When readable body content is sufficient and all previously collected sections have been placed in corresponding panels, skip further generic collection regardless of URL. Continue normal collection if unmatched sections remain. Removed the previous Kakuyomu-episode-URL condition and use debug reason `body-already-readable-with-disclosure-sections`. Moved Kakuyomu Apollo reference resolution to `tweb/apollo.py`, leaving table-of-contents schema interpretation and episode URL generation site-specific. Read only necessary fields of entities reachable from the target work; limit transfers to 200,000 characters per 1 entity. Ambiguous-candidate resolution and role-based target selection remain future work.
 - runtime mount failure:
-  class static block の構文変換、消失した main の復元、inline Flight / runtime network JSON の共通 collector で補う。URL の根拠を持たない記事は本文として表示し、誤ったリンクを生成しない。React / Nuxt 全体の mount 成功や未知の router の再現まで保証するものではない。
+  Use class static block syntax conversion, restoration of missing main content, and a shared collector for inline Flight and runtime network JSON. Display articles without a supported URL as text rather than generating incorrect links. This does not guarantee successful mounting of all React/Nuxt apps or reproduction of unknown routers.
 - pane layout restore:
-  main ancestor path と意味を持つ shell sibling は汎用に復元する。本文・ナビの選別は HTML / ARIA / 構造判定へ移し、class 名に由来する領域判定を削除した。判断材料のない複数候補は選択せず本文へ追記する。pane ごとの詳細な部分復元や disclosure の同名候補の曖昧解消は引き続き改善対象とする。
+  Restore the main ancestor path and meaningful shell siblings generically. Move body/navigation selection to HTML/ARIA/structural checks and remove class-name-based region detection. Append ambiguous candidates to the body without selecting one arbitrarily. Detailed pane-level restoration and ambiguous disclosures with identical names remain open.
 - inline Flight chunk scan:
-  `window.__next_f` の実行結果だけでなく、HTML 内の `__next_f.push(...)` 文字列そのものも generic runtime-data collector が読む。script 実行順や runtime 状態で `__next_f` 参照を取りこぼしても、topic sidebar の categories / subCategories のような nav data を復元できる。
-- 可視 client-failure shell の後始末:
-  本文側に十分な可視テキストが残っているのに、`申し訳ありません、ただ今障害が発生しております。` のような失敗 shell だけが別 section としてぶら下がる場合は、その shell を browser fallback 前に DOM から落として最終出力へ混ぜない。
+  The generic runtime-data collector reads not only the execution result of `window.__next_f` but also the `__next_f.push(...)` string itself in the HTML. Even if you miss the `__next_f` reference in the script execution order or runtime state, you can restore nav data such as categories / subCategories in the topic sidebar.
+- Visible client-failure shell cleanup:
+  When sufficient visible body text remains but a failure shell such as `申し訳ありません、ただ今障害が発生しております。` hangs off a separate section, remove that shell from the DOM before browser fallback so it does not enter final output.
 
-## `site_specific` を減らす方針
+## Policy to reduce `site_specific`
 
-- 方針 1:
-  サイト名ではなく failure class で整理する。`note.com 対応` と呼ぶのではなく、`flight 断片からの section 正規化不足` や `interactive disclosure 展開不足` として扱う。
-- 方針 2:
-  抽出器を 1 つに無理に統合するより、`HydrationSection` 相当の共通正規化面を強くする。`__NEXT_DATA__`、`__NUXT__`、flight、XHR/`fetch` 観測は収集方法が別でもよい。
-- 方針 3:
-  補完を発火してよい条件を generic にする。`main` 消失、loading shell 継続、既存本文の薄さ、section role の不足などを組み合わせ、URL ではなくページ状態で判断する。
-- 方針 4:
-  browser-render fallback は逃げ道だけでなく差分計測装置として使う。QuickJS 結果と browser-render 結果の差から、足りない DOM API、event、network model、runtime data を逆算する。
-- 方針 5:
-  `site_specific.py` に新しい分岐を足す前に、その分岐が吸収している failure class、generic 側へ昇格できる候補、最後まで残差として残す理由を最低限書く。
+- Policy 1:
+  Classify failures by failure class rather than site name. Use `incomplete section normalization from Flight fragments` or `incomplete interactive disclosure expansion` instead of `note.com support`.
+- Policy 2:
+  Strengthen a common normalization surface equivalent to `HydrationSection` rather than forcing all extractors into 1 implementation. `__NEXT_DATA__`, `__NUXT__`, Flight, and XHR/`fetch` observations may use different collection methods.
+- Policy 3:
+  Make supplementation conditions generic. Combine missing `main`, persistent loading shells, sparse content, and missing section roles to decide from page state rather than URLs.
+- Policy 4:
+  Browser-render fallback is used not only as an escape route but also as a difference measuring device. Calculate the missing DOM API, event, network model, and runtime data from the difference between the QuickJS result and the browser-render result.
+- Policy 5:
+  Before adding a new branch to `site_specific.py`, write at least the failure class that the branch absorbs, candidates that can be promoted to the generic side, and the reason for leaving it as a residual until the end.
 
-## 定常監査ループ
+## Regular audit loop
 
-- `python3 -m tweb.audit` は `tweb/data/quickjs_audit_sites.json` の unified 44サイトを既定対象にし、QuickJS-only と forced Chrome の出力差をランキングする。現在は JP/EN を分けず 1 つの canonical manifest にまとめ、未解消差分を中心とする20サイトを `active_site_ids` で重点対象として明示し、必要なら `--tag jp` や `--tag en` で絞る
-- 指標は visible body text 長、visible/full body 類似度、title 一致、link 数、入力系 control 数、snapshot DOM node 数で、`match` / `minor_gap` / `major_gap` / `quickjs_error` に分類する
-- button/tab は raw count として保持するが、監査の主比較は text/select/radio/checkbox/submit などの user-input control に寄せ、装飾的な site chrome button の増減で過検知しにくくしている
-- `--probe-navigation` を使うと same-site の代表リンクを1件だけ追加取得し、次画面の title / visible body length / link/control 数も監査 JSON に残せる
-- Chrome と QuickJS が本文の locale variant だけ異なる場合は、その locale 差を別 reason として扱い、文字列類似度だけで `major_gap` を付けない
-- title・link・入力系 control・DOM が十分近く、visible body だけが閾値近辺で短いケースは `major_gap` ではなく `minor_gap` に寄せる。 text-rich carousel や delayed card 群の軽微差分で過大分類しないため
-- `public`、`service`、`reference`、`research`、`government`、`transport`、`weather` などの tag を manifest に持たせているので、言語別にもカテゴリ別にも同じ inventory を継続監視できる
-- raw fetch が安定している `quickjs_error` / timeout 系は、比較コストを理由に canonical cohort から外さず、runtime 改善の回帰 target として残す
-- 新しい live bug を直したら、再発監視したい URL を manifest に追加し、単発修正で終わらせず定常比較へ入れる
+- `python3 -m tweb.audit` uses the unified 44-site inventory in `tweb/data/quickjs_audit_sites.json` by default and ranks differences between QuickJS-only and forced Chrome output. JP/EN share 1 canonical manifest; 20 sites, primarily with unresolved differences, are explicitly focused through `active_site_ids`. Use `--tag jp` or `--tag en` to narrow the selection.
+- Measure visible body length, visible/full-body similarity, title match, link count, input-control count, and snapshot DOM-node count, classifying results as `match` / `minor_gap` / `major_gap` / `quickjs_error`.
+- Retain raw button/tab counts, but prioritize user-input controls such as text/select/radio/checkbox/submit in audit comparisons to avoid false positives caused by decorative site-chrome buttons.
+- `--probe-navigation` fetches 1 representative same-site link and records the next page's title, visible body length, and link/control counts in audit JSON.
+- If Chrome and QuickJS differ only in the locale variant of the main text, treat the locale difference as a separate reason and do not add `major_gap` based only on string similarity.
+- Prefer `minor_gap` over `major_gap` when titles, links, input controls, and DOM are close and only visible body length is slightly below the threshold. Avoid overstating minor differences from text-rich carousels or delayed cards.
+- Since the manifest has tags such as `public`, `service`, `reference`, `research`, `government`, `transport`, `weather`, etc., the same inventory can be continuously monitored by language and category.
+- Keep `quickjs_error` / timeout cases with stable raw fetches in the canonical cohort as runtime regression targets, even when comparison is expensive.
+- After fixing a new live bug, add its URL to the manifest for recurrence monitoring and regular comparison rather than stopping at a one-off fix.
 
-## 実装順の目安
+## Suggested implementation order
 
 - 1.
-  `site_specific.py` の各分岐に、対象サイト名ではなく failure class を 1 行で対応付ける。
+  Give each branch in `site_specific.py` a 1-line failure-class description rather than a target-site label.
 - 2.
-  `HydrationSection` のような共通 section/link 正規化面を強化し、既知 root、flight、runtime probe、Python retry を同じ出口へ流す。
+  Enhance common section/link normalization surfaces like `HydrationSection` to force known root, flight, runtime probe, and Python retry to flow to the same exit.
 - 3.
-  disclosure/accordion、tab、pane のような interactive section 展開を、個別 DOM class 名ではなく汎用 interaction model へ寄せる。
+  Model disclosure/accordion, tab, and pane expansion through generic interactions rather than individual DOM class names.
 - 4.
-  QuickJS 側で不足している API や async 実行モデルを、実ページ failure の多い順に埋める。
+  Fill in the missing APIs and async execution models on the QuickJS side in order of the number of real page failures.
 - 5.
-  generic 側で吸収できた分岐から `site_specific.py` を削り、最後に残るものだけを残差として扱う。
+  Remove branches from `site_specific.py` as generic support absorbs them; treat only the remaining cases as residual site-specific behavior.
 
-### 限定対応
+### Limited support
 
-- `fetch` / `XMLHttpRequest` は API 名としては使えるが、内部では既存の Python 取得層を同期的に呼ぶ最小実装であり、実ブラウザの通信モデルそのものではない
-- ローカルファイルと `http` / `https` を扱えるが、same-origin policy、CORS、SSRF 制御、追加通信の許可モデルはまだ未整理
-- TUI / CLI で保持している session を渡した場合は、その session を経由して取得する
-- TUI / API から JS 駆動 button の click を実行し、DOM 更新・通信・遷移を分類できる。`off` / `dom-only` / `network` の段階許可があり、低レベル API の既定は `dom-only`、TUI の既定は `network`。same-origin / CORS / SSRF を含む通信先の制御は未整備
-- `iframe` は `contentDocument` / `contentWindow` を持つ最小 shim があるが、独立した実ページ読み込みや本格的な frame ナビゲーションまではしていない
-- `DOMParser` は HTML fragment に加えて XML を Python DOM へ一括解析し、namespace prefix付き要素と `getElementsByTagName()` を扱う。`canvas`、`audio`、`dialog`、`Image`、`BroadcastChannel` などは互換性のための軽量実装が中心で、描画・再生・OS 統合まで保証しない
-- `MutationObserver` / `IntersectionObserver` / `matchMedia` / `indexedDB` / `storage` は、実ページ互換のための最小動作を優先している
-- `Worker` コンストラクタはあるが、別スレッドで script を実行する本物の worker ではない
-- React 系サイトで必要になった DOM 互換はかなり増えているが、すべての SPA を安定再現できる段階ではない
+- `fetch` / `XMLHttpRequest` can be used as API names, but internally they are minimal implementations that synchronously call the existing Python acquisition layer, and are not the actual browser communication model itself.
+- Local files and `http` / `https` are supported, but same-origin policy, CORS, SSRF controls, and permissions for additional requests remain undefined.
+- If you pass the session held by TUI/CLI, obtain it via that session.
+- You can execute JS-driven button clicks from TUI/API and classify DOM updates, communications, and transitions. There are `off` / `dom-only` / `network` stage permissions, low level API default is `dom-only`, TUI default is `network`. Control of communication destinations including same-origin / CORS / SSRF is not yet in place
+- `iframe` has a minimal shim with `contentDocument` / `contentWindow`, but does not have independent real page loading or full-fledged frame navigation
+- In addition to HTML fragments, `DOMParser` parses XML into Python DOM and handles elements with namespace prefix and `getElementsByTagName()`. `canvas`, `audio`, `dialog`, `Image`, `BroadcastChannel`, etc. are mainly lightweight implementations for compatibility, and do not guarantee drawing, playback, or OS integration.
+- `MutationObserver` / `IntersectionObserver` / `matchMedia` / `indexedDB` / `storage` prioritizes minimum operation for real page compatibility
+- `Worker` has a constructor but does not execute scripts in a separate thread.
+- Although the DOM compatibility required by React-based sites has increased considerably, it is not yet possible to reliably reproduce all SPAs.
 
-### 未対応
+### Unsupported
 
-- フルブラウザ互換
-- JavaScript 実行時間の厳密な制限
-- 厳密な same-origin policy / CORS enforcement
-- 実行可能な本物の `Worker` / `SharedWorker`
+- Full browser compatibility
+- Strict limits on JavaScript execution time
+- Strict same-origin policy / CORS enforcement
+- Real, executable `Worker` / `SharedWorker`
 - `ServiceWorker`
 - `WebSocket`
-- 実ブラウザ相当のレイアウト計算、描画、ペイント、メディア再生
-- すべてのクライアントレンダリング SPA を browser-render fallback なしで読める状態
+- Real-browser-equivalent layout calculation, rendering, painting, and media playback
+- Reading every client-rendered SPA without browser-render fallback
 
-## 制限と未解決事項
+## Limitations and open issues
 
-- quick.js runtime の既定メモリ制限はあるが、CLI/TUI からの細かい調整やページ単位のポリシー分岐は未実装
-- page event dispatch は時間制限を指定できる内部 API を持つが、通常経路では Python bridge callback との非互換を避けるため `time_limit_seconds=None` で呼ぶ。async drain budget 等はあるものの、一般の script eval や個々の callback を強制停止する厳密な wall-clock 制限は未実装
-- same-origin policy と CORS は未整理
-- `fetch` / XHR をどこまで既定許可にするかは再整理が必要
-- 外部 script cache は `URL` 基本と `Vary` 分岐の永続 cache まで実装済みで、`Vary` の広い組み合わせ対応や eviction policy は今後の整理対象である
-- iframe、worker などは一部 shim を持つが、service worker、WebSocket などは未対応
-- JS 駆動 button click は submit と別経路で扱い、結果を `dom_updated` / `navigation_requested` / `network_requested` / `javascript_required` に分類する。段階許可は実装済みで、通信先の安全境界は `SECURITY.md` の継続課題とする
-- React 系サイトでは互換性を拡張し続けているが、すべてのクライアントレンダリング SPA を安定再現できる段階ではない
-- 一部の大きい bundle では quick.js コンパイラ固有の失敗を局所 fallback で吸収しており、完全互換ではなく「読めるところまで進める」方針を取っている
+- The quick.js runtime has a default memory limit, but fine-grained CLI/TUI settings and per-page policies are not implemented.
+- Page event dispatch has an internal API accepting a time limit, but normal paths call it with `time_limit_seconds=None` to avoid incompatibility with Python bridge callbacks. Async drain budgets exist, but strict wall-clock interruption of general script evaluation or individual callbacks is not implemented.
+- Same-origin policy and CORS remain undefined.
+- It is necessary to reorganize the extent to which `fetch` / XHR should be allowed by default.
+- The external script cache implements persistent `URL`-based storage with `Vary` variants. Broader `Vary` combinations and eviction policies remain future work.
+- Some iframe and worker shims exist, but service workers and WebSockets are unsupported.
+- JS-driven button click is handled in a different route from submit, and the results are classified into `dom_updated` / `navigation_requested` / `network_requested` / `javascript_required`. Staged permissions are implemented, and the safe boundary of the communication destination is an ongoing issue for `SECURITY.md`.
+- Although React-based sites continue to expand compatibility, it is not yet possible to reliably reproduce all client-rendered SPAs.
+- Some large bundles use local fallbacks for quick.js compiler-specific failures, prioritizing readable content over full compatibility.
 
-## 実装上の整理ポイント
+## Implementation decisions
 
-- ランタイムの公開入口と `QuickJSRuntime` 本体は `tweb/js_runtime.py`
-- Python 側の bundle 前処理や構文補助は `tweb/js_runtime_helpers.py`
-- 巨大な JS bridge 定義は `tweb/js_runtime_bridge.py`
-- 文書 API からの呼び出しと hydration data フォールバックの入口は `tweb/api.py`
-- runtime data collector と generic section/link 正規化は `tweb/runtime_data.py`
-- HTML / ARIA / 構造に基づく補完先・section role の判定は `tweb/hydration_targets.py`
-- Apollo cache の参照解決と runtime entity の限定読出しは `tweb/apollo.py`
-- generic 側へまだ昇格していない残差の hydration / interaction 補完は `tweb/site_specific.py`
-- CLI の script 読み込みは `tweb/cli.py`
-- TUI の script 実行フローは `tweb/tui.py`
-- 回帰テストは主に `tests/test_js_runtime.py` と `tests/test_cli.py`
+- The runtime's public entry point and `QuickJSRuntime` implementation live in `tweb/js_runtime.py`.
+- Bundle preprocessing and syntax assistance on the Python side is `tweb/js_runtime_helpers.py`
+- The large JS bridge definition lives in `tweb/js_runtime_bridge.py`.
+- Document API calls and hydration fallback enter through `tweb/api.py`.
+- Runtime data collection and generic section/link normalization live in `tweb/runtime_data.py`.
+- HTML / ARIA / Structure-based completion target/section role determination is `tweb/hydration_targets.py`
+- Apollo cache reference resolution and runtime entity limited read is `tweb/apollo.py`
+- Residual hydration/interaction supplementation not yet promoted to generic support lives in `tweb/site_specific.py`.
+- CLI script loading is `tweb/cli.py`
+- TUI script execution flow is `tweb/tui.py`
+- Regression tests primarily live in `tests/test_js_runtime.py` and `tests/test_cli.py`.
 
-## 今後の方針
+## Future direction
 
-- JavaScript 実行エンジンは引き続き quick.js を主系として維持し、全面的な別エンジン置換は既定方針にしない
-- 置換を検討する場合も、まずは quick.js と現在の DOM bridge / Python callback / 同期的な取得統合を崩さずに済むかを優先して判断する
-- 特定の bundle や構文クラスだけが quick.js と相性悪く失敗する場合は、全面置換より先に局所的な前処理や限定フォールバックで吸収できるかを検討する
-- それでも quick.js 側で吸収しにくい失敗が継続する場合に限り、既定は quick.js のまま、問題の script 実行だけ補助エンジンを併用する構成を検討する
-- 互換 API を増やすときは、実ページの失敗要因に直接効くものを優先する
-- 取得層は汎用実装を保ち、site-specific な抜け道を作らない
-- 外部 script cache は process 間で再利用できる永続 cache まで実装済みで、今後は variant 管理と eviction の整理を続ける
-- JavaScript 実行結果は通常モード / DOM モード / TUI の表示と整合するように保つ
-- 通信、DOM 更新、遷移の許可境界は曖昧にせず、段階的に分けていく
-- セキュリティ上の制約と実装済み機能の差分は `SECURITY.md` に明示する
+- The main JavaScript execution engine will continue to be quick.js, and the default policy will not be to completely replace it with another engine.
+- Even when considering replacement, first assess whether the current quick.js DOM bridge, Python callbacks, and synchronous fetching integration can be preserved.
+- When only specific bundles or syntax classes fail in quick.js, consider local preprocessing or limited fallback before replacing the engine entirely.
+- Only if failures remain difficult to address in quick.js, consider an auxiliary engine for problematic script execution while keeping quick.js as the default.
+- When extending compatibility APIs, prioritize those that directly address failures on real pages.
+- Keep fetching generic without site-specific bypasses.
+- External scripts have a persistent cache reusable across processes; variant management and eviction remain future work.
+- Keep JavaScript execution results consistent with normal mode/DOM mode/TUI display
+- Separate network, DOM-update, and navigation permissions explicitly into stages.
+- Document differences between security constraints and implemented features in `SECURITY.md`.
 
-## 個別 URL の確認記録
+## Individual URL verification records
 
-- 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` は、HTTP 307 の JavaScript Cookie challenge が `location.reload()` を要求する。Cookie の session 反映と再読み込み実装により、`--browser-render never --mode text` で再取得が HTTP 200 となり、記事タイトルと周辺本文を表示できた。開票速報の候補者一覧はこの時点では未確認だった。Chrome fallback は使用していない。
-- 同変更の回帰確認: JavaScript / document API / CLI / TUI の 610 tests 中 609 件成功。`test_augments_note_topic_sections_from_runtime_probe` は失敗したが、作業開始時点の `828d82f` から抽出した変更前コードでも同じ失敗を再現した。今回追加した Cookie / reload / TUI の 6 tests は成功。
-- main の `2fab30f` を統合後、JavaScript / document API / CLI / TUI / 通常描画の回帰テスト 695 件がすべて成功した。
-- 同 URL の修正前の追加比較: Chrome の実ブラウザと `--browser-render always --mode text` では候補者 7 名の氏名・得票数・略歴と定数・立候補者数・開票率を表示する。一方、QuickJS の候補者一覧は 0 件で、`v-cloak` と未展開の `template v-for` が残る。表の実体は `<table>` ではなく Vue 2.6.12 が生成する `div` の一覧である。
-- 元 HTML の inline script には 7 名分の XML が含まれるため、一覧欠落はデータ未取得や通常描画レンダラの表対応が原因ではない。XML を `DOMParser` で解析後、`jQuery(xmlDocument).find('root > places > place')` が `TypeError: createElement is not implemented` で失敗する。QuickJS の同 XML に対する `querySelectorAll('root > places > place')` は 1 件を返し、単純な jQuery `find('place')` も 1 件を返す。XML Document の jQuery selector 初期化互換性が不足し、後続の Vue mount に到達しなかった。
-- 候補者一覧の修正: XML Document に selector engine の feature probe 用ノード生成 API と文書の子ノード情報を追加し、解析した XML 要素の大文字・小文字と ownerDocument を保持する。jQuery の `find('> candidate')` が 7 件を返すようになった。さらに HTML 属性のシリアライズは二重引用符の中のシングルクォートを保持し、Vue のテンプレート式に `&#x27;` が残って render function のコンパイルに失敗する問題を解消した。サイト専用 fetch / data 補完は追加していない。
-- 修正後の実 URL 確認: `--browser-render never --mode text` で候補者一覧を描画できた。取得済み HTML 内の XML と照合し、QuickJS と Chrome のテキスト出力の両方に氏名・得票数・略歴が各 7/7 件、開票率が一致することを確認した。開票データは取得時点で変わるため、この確認は保持した同じデータに対する照合結果である。周辺 script の既存エラーは残っているが、候補者一覧の生成は成功した。
-- 候補者一覧修正の回帰確認: XML selector engine の feature probe、XML の nodeName / ownerDocument、テンプレート式の HTML 属性シリアライズを追加テストした。JavaScript / document API / CLI / TUI / 通常描画 / parser の合計 699 tests がすべて成功した。
-- main の `d6ca3c6` を統合後、上記の回帰テスト 706 件がすべて成功した。実 URL も QuickJS のみで候補者 7 名と開票率を表示できることを再確認した。
+- 2026-10-19: `https://www.kanaloco.jp/electiondata/article-1311506` requires HTTP 307 JavaScript Cookie challenge `location.reload()`. By reflecting the cookie session and implementing reloading, `--browser-render never --mode text` re-fetched HTTP 200 and was able to display the article title and surrounding text. The list of candidates in the preliminary vote count report was unconfirmed at this time. Chrome fallback is not used.
+- Regression verification for the same change: 609 of 610 JavaScript/document API/CLI/TUI tests passed. `test_augments_note_topic_sections_from_runtime_probe` failed, but the same failure reproduced on pre-change code extracted from `828d82f` at task start. All 6 newly added Cookie/reload/TUI tests passed.
+- After integrating main's `2fab30f`, all 695 JavaScript/document API/CLI/TUI/normal-renderer regression tests passed.
+- Additional pre-fix comparison at the same URL: real Chrome and `--browser-render always --mode text` display names, votes, and biographies for 7 candidates, seat count, candidate count, and vote-count progress. QuickJS displays 0 candidates, leaving `v-cloak` and unexpanded `template v-for`. The displayed list consists of `div` generated by Vue 2.6.12 rather than `<table>`.
+- The original HTML's inline script contains XML for 7 candidates, so missing data or normal-renderer table support is not the cause. After XML parsing with `DOMParser`, `jQuery(xmlDocument).find('root > places > place')` fails with `TypeError: createElement is not implemented`. QuickJS's `querySelectorAll('root > places > place')` returns 1 item for the same XML, and a simple jQuery `find('place')` also returns 1 item. Missing compatibility in jQuery selector initialization for XML Documents prevented the later Vue mount.
+- Candidate-list fix: added node-creation APIs for selector-engine feature probes and document child-node information to XML Documents, preserving XML element case and ownerDocument. jQuery's `find('> candidate')` now returns 7 items. HTML attribute serialization also preserves single quotes inside double quotes, fixing render-function compilation failures caused by `&#x27;` remaining in Vue template expressions. No site-specific fetch or data supplementation was added.
+- Post-fix real-URL verification: `--browser-render never --mode text` rendered the candidate list. Against XML in the fetched HTML, both QuickJS and Chrome text output included names, vote counts, and biographies for 7/7 candidates, with matching vote-count progress. Election data changes over time, so this verifies the same retained data. Existing errors in surrounding scripts remain, but candidate-list generation succeeded.
+- Candidate-list regression verification: added tests for XML selector-engine feature probes, XML nodeName/ownerDocument, and HTML attribute serialization of template expressions. All 699 JavaScript/document API/CLI/TUI/normal-renderer/parser tests passed.
+- After integrating main's `d6ca3c6`, all 706 regressions above passed. Rechecked that QuickJS alone displays all 7 candidates and vote-count progress at the real URL.

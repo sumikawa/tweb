@@ -1,0 +1,157 @@
+[English](DEVELOPMENT.md) | [日本語](DEVELOPMENT.ja.md)
+
+# DEVELOPMENT.ja.md
+
+このドキュメントは、`tweb` を開発・調査・保守するときの入口をまとめたものです。ユーザー向けの使い方は `README.ja.md`、機能ごとの詳細方針は各 `docs/*.ja.md` を参照してください。
+
+## `uv run` とキャッシュ
+
+Codex や sandbox 環境では `~/.cache/uv` の権限エラーを踏みやすいため、`uv run` が必要なコマンドは最初から一時ディレクトリへ逃がすのを基本にします。
+
+```bash
+UV_CACHE_DIR=/private/tmp/tweb-uv-cache \
+PYTHONPYCACHEPREFIX=/private/tmp/tweb-pycache \
+uv run python3 -m unittest tests.test_cli
+```
+
+また、フルテストは `make test` で同じ一時キャッシュ設定つきで実行できます。
+
+Dropbox同期で `.venv` のsymlinkに競合が出る場合は、`UV_PROJECT_ENVIRONMENT=/private/tmp/tweb-dev-venv` を指定して仮想環境も同期対象外に置きます。Pythonの選択が環境依存になる場合は `uv run --python 3.12 python -m unittest ...` のように明示します。
+
+## よく使う開発コマンド
+
+通常表示:
+
+```bash
+tw https://example.com --mode text
+tw ./page.html --mode text
+tw https://example.com/article --mode text --main-only
+```
+
+`--main-only` は祖先を含む表示状態を確認し、表示可能な `<main>`、`<article>` を優先します。該当する要素がない場合は、表示可能な `div` / `section` から本文を推定します。候補の文字数・段落数・見出し数・リンク数は、子から親への一度の走査で集計します。
+
+DOM / DOM-AI:
+
+```bash
+tw https://example.com --mode dom
+tw https://example.com --mode dom-ai
+```
+
+TUI:
+
+```bash
+tw https://example.com
+```
+
+追加 script 適用:
+
+```bash
+tw https://example.com --script "document.querySelector('h1').textContent = 'CLI Title';" --mode text
+tw https://example.com --script-file ./patch.js --mode text
+```
+
+Cookie / browser-render:
+
+```bash
+tw https://example.com/private --cookie-file cookies.txt
+tw https://example.com/private --cookie-from-browser firefox --cookie-domain example.com
+tw https://example.com/app --browser-render auto
+tw https://example.com/app --browser-render always
+```
+
+デバッグログ:
+
+```bash
+tw https://example.com --debug
+tw https://example.com --debug-log /tmp/tweb-debug.log
+```
+
+## テスト
+
+まずは対象に近い unittest を絞って回します。
+
+```bash
+UV_CACHE_DIR=/private/tmp/tweb-uv-cache \
+PYTHONPYCACHEPREFIX=/private/tmp/tweb-pycache \
+uv run python3 -m unittest tests.test_cli tests.test_document_api
+```
+
+フルテスト:
+
+```bash
+make test
+```
+
+代表的なテスト面:
+
+- `tests/test_cli.py`: CLI オプションと設定ファイル
+- `tests/test_document_api.py`: タイトル、本文、リンク、API 振る舞い。note topic の runtime probe テストは Python 側の追加取得をモックし、実サイトの応答に依存させない
+- `tests/test_fetcher.py`: 取得層、Cookie、session
+- `tests/test_normal_renderer.py`: 通常表示レンダラ
+- `tests/test_dom_renderer.py`: DOM / DOM-AI 表示
+- `tests/test_js_runtime.py`: QuickJS runtime と DOM bridge
+- `tests/test_render_efficiency.py`: Phase 17の通信分類、本文安定終了、debug上限、fetch/XHR維持
+- `tests/test_tui.py`: Textual TUI
+
+## 監査と性能計測
+
+QuickJS と browser-render の差分監査は `tweb.audit` で行います。
+
+```bash
+UV_CACHE_DIR=/private/tmp/tweb-uv-cache \
+PYTHONPYCACHEPREFIX=/private/tmp/tweb-pycache \
+uv run python3 -m tweb.audit
+```
+
+JSON 出力:
+
+```bash
+UV_CACHE_DIR=/private/tmp/tweb-uv-cache \
+PYTHONPYCACHEPREFIX=/private/tmp/tweb-pycache \
+uv run python3 -m tweb.audit --json > /tmp/tweb-audit.json
+```
+
+一部の target だけ回す:
+
+```bash
+UV_CACHE_DIR=/private/tmp/tweb-uv-cache \
+PYTHONPYCACHEPREFIX=/private/tmp/tweb-pycache \
+uv run python3 -m tweb.audit --tag en
+```
+
+- canonical manifest は `tweb/data/quickjs_audit_sites.json`
+- 実行履歴と判断の台帳は `docs/performance.ja.md`
+- cohort 状態を変えたら manifest と `docs/performance.ja.md` を同じ変更で更新する
+
+## リポジトリ構成
+
+主要なコード:
+
+- `tweb/cli.py`: `tw` CLI 入口
+- `tweb/fetcher.py`: URL / ローカルファイル取得、session / Cookie 初期化
+- `tweb/parser.py`: HTML パース
+- `tweb/dom.py`: DOM 抽象
+- `tweb/css.py`: CSS 解釈
+- `tweb/js_runtime.py`: QuickJS runtime の公開入口
+- `tweb/js_runtime_bridge.py`: QuickJS 側へ注入する DOM / browser bridge
+- `tweb/api.py`: `TWebDocument` と BeautifulSoup 風 API
+- `tweb/runtime_data.py`: runtime data / hydration collector
+- `tweb/hydration_targets.py`: HTML / ARIA / 構造に基づく本文・ナビ領域と section role の判定
+- `tweb/apollo.py`: Apollo normalized cache の共通参照解決と runtime entity の限定読出し
+- `tweb/site_specific.py`: カクヨムの目次 schema / episode URL の残差（note 専用 fetch は削除済み）
+- `tweb/tui.py`: Textual TUI
+- `tweb/renderers/normal.py`: 通常表示レンダラ
+- `tweb/renderers/dom.py`: DOM / DOM-AI レンダラ
+
+## ドキュメントの役割分担
+
+- `README.ja.md`: ユーザー向けの使い方
+- `docs/DEVELOPMENT.ja.md`: 開発フロー、コマンド、構成
+- `docs/API.ja.md`: Python API
+- `docs/DOM.ja.md`: DOM / DOM-AI の方針
+- `docs/CSS.ja.md`: CSS 解釈の方針
+- `docs/JS.ja.md`: QuickJS、hydration、browser-render
+- `docs/TUI.ja.md`: TUI 操作仕様
+- `docs/SECURITY.ja.md`: セキュリティ方針と TODO
+- `docs/PLAN.ja.md`: 段階的な開発計画
+- `docs/performance.ja.md`: 品質監査と性能記録

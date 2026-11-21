@@ -1,8 +1,10 @@
+[English](API.md) | [日本語](API.ja.md)
+
 # API.md
 
-`tweb` は CLI だけでなく、Python ライブラリとしても使える。ここでは現在の公開 API と、読み取り中心の BeautifulSoup 風 API、AI 向けの構造化 snapshot、変更系の操作 API を分けてまとめる。
+`tweb` is available as both a CLI and a Python library. This document covers the public API, BeautifulSoup-style read APIs, structured snapshots for AI agents, and mutation APIs.
 
-## 公開 import
+## Public imports
 
 ```python
 from tweb import (
@@ -26,9 +28,9 @@ from tweb import (
 )
 ```
 
-通常は `QuickJSRuntime` を直接触らず、`TWebDocument` を入口に使えば足りる。
+Normally use `TWebDocument` as the entry point without accessing `QuickJSRuntime` directly.
 
-## 最小例
+## Minimal example
 
 ```python
 from tweb import TWebDocument, fetch_resource, parse_document
@@ -42,7 +44,7 @@ for link in document.links():
   print(link.text, link.href)
 ```
 
-ローカルファイルも同じ流れで扱える。
+Local files use the same workflow.
 
 ```python
 from tweb import TWebDocument, fetch_resource, parse_document
@@ -52,7 +54,7 @@ document = TWebDocument(parse_document(resource))
 print(document.find("h1").text)
 ```
 
-## テキスト描画
+## Text rendering
 
 ```python
 from tweb.renderers.normal import render_normal, render_normal_with_metadata
@@ -61,24 +63,24 @@ text = render_normal(document.document, text_styles=False, main_only=True)
 result = render_normal_with_metadata(document.document, text_styles=False, main_only=True)
 ```
 
-`main_only=True` は表示可能な本文候補を選び、CSS解析結果をその描画内で共有する。既定はページ全体の描画。`render_normal_with_metadata` はテキストに加え、リンク・フォーム部品の表示位置を返す。
+`main_only=True` selects visible body-content candidates and shares CSS analysis within that render. By default, the entire page is rendered. `render_normal_with_metadata` returns rendered text together with link and form-control positions.
 
-`include_images=False` を指定すると画像の代替表示（alt テキストを含む）と `<figcaption>` のキャプションを省略します。既定は `True` です。`render_normal`、`render_normal_with_metadata` とそれぞれの subtree 版で利用でき、元の DOM は変更しません。
+`include_images=False` omits image placeholders (including alt text) and `<figcaption>` captions. The default is `True`. This is supported by `render_normal`, `render_normal_with_metadata`, and their subtree variants without modifying the original DOM.
 
 ```python
 text = render_normal(document.document, text_styles=False, main_only=True, include_images=False)
 ```
 
-## 取得
+## Fetching
 
-`fetch_resource(target, ...)` は URL またはローカルパスから `Resource` を返す。
+`fetch_resource(target, ...)` returns `Resource` from URL or local path.
 
-- `http://` / `https://` は `requests` で取得する
-- ローカルファイルはそのまま読む
-- `session=` を渡すと Cookie 付きで取得できる
-- `method=` と `form_data=` を渡すと form submit 後の再取得にも使える
+- Get `http://` / `https://` with `requests`
+- Read local files directly.
+- Pass `session=` to fetch using cookies.
+- Pass `method=` and `form_data=` to fetch a form submission response.
 
-Cookie 付き session を作る例:
+Example of creating a session with cookies:
 
 ```python
 from requests.cookies import RequestsCookieJar
@@ -92,30 +94,30 @@ resource = fetch_resource("https://example.com/private", session=session)
 session.close()
 ```
 
-## パースとドキュメント API
+## Parsing and document API
 
-`parse_document(resource)` は内部 DOM を作り、`TWebDocument` がその操作面を提供する。
+`parse_document(resource)` builds the internal DOM, and `TWebDocument` provides its public interface.
 
 ### `TWebDocument`
 
-主な読み取り API:
+Main read APIs:
 
-- `title`: ページタイトル
-- `html`: `<html>` の `TWebElement`
-- `body`: `<body>` の `TWebElement`
-- `body_text()`: 本文テキスト
-- `links()`: `Link(text, href)` の一覧
-- `find(name=None, attrs=None)`: 最初の一致
-- `find_all(name=None, attrs=None, limit=None)`: 一覧
-- `select(selector)`: 簡易 CSS selector
-- `snapshot(...)`: AI 向けの構造化 snapshot
-- `hydration_debug()`: runtime data 補完の source summary / confidence
-- `javascript_debug()`: script eval / async drain / style rebuild / script cache の timing/count
-- `agent_actions()`: 変更系 API の入口
-- `debug_control(...)`, `debug_controls()`: form / button のデバッグ向け記述
-- `invoke_agent_action(...)` / `agent_actions().invoke(...)`: 構造化された基本操作の入口
+- `title`: Page title
+- `html`: `TWebElement` of `<html>`
+- `body`: `TWebElement` of `<body>`
+- `body_text()`: Body text
+- `links()`: List of `Link(text, href)`
+- `find(name=None, attrs=None)`: First match
+- `find_all(name=None, attrs=None, limit=None)`: List
+- `select(selector)`: Simple CSS selector
+- `snapshot(...)`: Structured snapshot for AI
+- `hydration_debug()`: Source summaries and confidence for runtime data supplementation
+- `javascript_debug()`: script eval / async drain / style rebuild / script cache timing/count
+- `agent_actions()`: Entry point for mutation APIs
+- `debug_control(...)`, `debug_controls()`: Form / button debugging description
+- `invoke_agent_action(...)` / `agent_actions().invoke(...)`: Structured basic operation entry
 
-例:
+Example:
 
 ```python
 article = document.find("article")
@@ -125,18 +127,18 @@ primary_links = document.select('main a[href^="/"]')
 
 ### `TWebElement`
 
-`TWebElement` は `TWebDocument.find()` や `select()` の戻り値として使う。
+`TWebElement` is used as the return value of `TWebDocument.find()` and `select()`.
 
-主な参照 API:
+Main accessor APIs:
 
-- `name`: タグ名
-- `attrs`: 属性 dict
-- `text`: 要素配下のテキスト
-- `get(key, default=None)`: 属性取得
-- `get_text(separator=" ", strip=True)`: テキスト取得
-- `find(...)`, `find_all(...)`, `select(...)`: 部分木に対する検索
+- `name`: Tag name
+- `attrs`: Attribute dict
+- `text`: Text under element
+- `get(key, default=None)`: Get attributes
+- `get_text(separator=" ", strip=True)`: Get text
+- `find(...)`, `find_all(...)`, `select(...)`: Search on subtrees
 
-例:
+Example:
 
 ```python
 card = document.select(".card")[0]
@@ -144,19 +146,19 @@ title = card.find("h3").text
 href = card.find("a").get("href")
 ```
 
-### BeautifulSoup 互換性の位置づけ
+### BeautifulSoup compatibility
 
-現在の方針は、読み取り面では BeautifulSoup 風の API を維持し、変更系は別オブジェクトに分けることにある。
+Keep a BeautifulSoup-style read API while separating mutations into another object.
 
-- `find` / `find_all` / `select` / `get_text` は読み取り面として維持する
-- form 編集、submit、JS button click は `agent_actions()` 側に寄せる
-- `execute_script()` は強い機能なので、単純な読み取り API と同列には扱わない
+- Preserve `find` / `find_all` / `select` / `get_text` as read APIs.
+- Route form editing, submission, and JS button clicks through `agent_actions()`.
+- `execute_script()` is a powerful feature and should not be treated in the same way as a simple read API.
 
-これは AI から使うときに、閲覧専用 API と副作用のある API の境界を明確にするためでもある。
+This also clarifies the boundary between read-only and side-effecting APIs for AI agents.
 
-## AI 向け snapshot API
+## Snapshot API for AI agents
 
-`snapshot()` は、現在ページの主要情報を JSON 化しやすい dataclass 群で返す。
+`snapshot()` returns key page information as dataclasses that are easy to serialize to JSON.
 
 ```python
 snapshot = document.snapshot(max_depth=2)
@@ -168,22 +170,22 @@ print(snapshot.form_controls[0].control_id if snapshot.form_controls else "")
 print(snapshot.to_dict()["dom_nodes"][0]["node_id"] if snapshot.dom_nodes else "")
 ```
 
-戻り値 `AgentPageSnapshot` の主なフィールド:
+Main fields of the returned `AgentPageSnapshot`:
 
-- `source`: 元 URL またはローカルパス
-- `title`: ページタイトル
-- `body_text`: 本文テキスト
+- `source`: Original URL or local path
+- `title`: Page title
+- `body_text`: Body text
 - `links`: `AgentSnapshotLink`
 - `form_controls`: `AgentSnapshotControl`
 - `dom_nodes`: `AgentSnapshotNode`
 
-主な引数:
+Main arguments:
 
-- `max_depth`: DOM ノードをどこまで辿るか
-- `include_script_like`: `script` / `style` を詳細に含めるか
-- `viewport_columns`: CSS 可視性評価に使う幅
+- `max_depth`: How far to follow the DOM node
+- `include_script_like`: Include `script` / `style` in details?
+- `viewport_columns`: Width used for CSS visibility evaluation
 
-`AgentPageSnapshot` 自体にも、AI から使いやすい read-only 検索補助を持たせている。
+`AgentPageSnapshot` itself also has a read-only search aid that is easy to use from AI.
 
 ```python
 snapshot = document.snapshot(max_depth=3)
@@ -194,16 +196,16 @@ search_label_nodes = snapshot.find_nodes(node_type="text", text_contains="search
 docs_link = snapshot.link(href="https://example.com/docs")
 ```
 
-主な補助メソッド:
+Main helper methods:
 
-- `link(href=None, text=None)`: 最初の一致する link を返す
-- `find_links(href=None, text=None, text_contains=None, limit=None)`: link 一覧を絞り込む
-- `control(control_id)`: control ID で 1 件引く
-- `find_controls(kind=None, name=None, label_contains=None, input_type=None, limit=None)`: form control 一覧を絞り込む
-- `node(node_id)`: node ID で 1 件引く
-- `find_nodes(node_type=None, tag=None, text_contains=None, attrs=None, visible=None, parent_id=None, include_skipped=True, limit=None)`: DOM ノード一覧を絞り込む
+- `link(href=None, text=None)`: Return the first matching link
+- `find_links(href=None, text=None, text_contains=None, limit=None)`: Filter links
+- `control(control_id)`: Return 1 control by ID
+- `find_controls(kind=None, name=None, label_contains=None, input_type=None, limit=None)`: Filter form controls
+- `node(node_id)`: Return 1 node by ID
+- `find_nodes(node_type=None, tag=None, text_contains=None, attrs=None, visible=None, parent_id=None, include_skipped=True, limit=None)`: Filter DOM nodes
 
-各 `AgentSnapshotControl` は、操作可否の判断に使える次のフィールドも持つ。
+Each `AgentSnapshotControl` also has these fields for determining whether actions are available.
 
 - `disabled`
 - `readonly`
@@ -225,17 +227,17 @@ docs_link = snapshot.link(href="https://example.com/docs")
 - `options`
 - `input_type`
 
-`options` は `AgentSnapshotOption(value, label, selected)` の配列として返る。
+`options` is returned as an array of `AgentSnapshotOption(value, label, selected)`.
 
 ### `AgentSnapshotNode`
 
-`dom_nodes` は親子関係を `node_id` / `parent_id` で表すフラット配列で返る。
+`dom_nodes` returns a flat array representing the parent-child relationship as `node_id` / `parent_id`.
 
-主なフィールド:
+Main fields:
 
 - `node_id`
 - `parent_id`
-- `node_type`: `"element"` または `"text"`
+- `node_type`: `"element"` or `"text"`
 - `tag`
 - `text`
 - `attrs`
@@ -250,13 +252,13 @@ docs_link = snapshot.link(href="https://example.com/docs")
 - `text_decoration`
 - `skipped`
 
-`snapshot.to_dict()` を使うと、そのまま JSON シリアライズしやすい dict になる。
+If you use `snapshot.to_dict()`, it becomes a dict that is easy to JSON serialize as is.
 
-この read-only 補助は `snapshot` 内だけを対象にし、DOM 変更や form submit は行わない。副作用を伴う操作は引き続き `agent_actions()` へ分離する。
+These read-only helpers operate only within `snapshot` and do not modify the DOM or submit forms. Keep side-effecting operations separate in `agent_actions()`.
 
-## 変更系 API
+## Mutation APIs
 
-`agent_actions()` は `TWebAgentActions` を返し、form 編集や submit などの副作用を持つ操作をここから呼ぶ。
+`agent_actions()` returns `TWebAgentActions`, and operations with side effects such as form editing and submit are called from here.
 
 ```python
 actions = document.agent_actions()
@@ -264,11 +266,11 @@ actions.set_text_control("q", "updated query")
 actions.toggle_checkbox("safe")
 ```
 
-`TWebDocument` 自体にも同名メソッドは残っているが、AI 操作用には `agent_actions()` 経由を推奨する。
+`TWebDocument` itself still has a method with the same name, but we recommend using `agent_actions()` for AI operations.
 
-### 構造化 action invoke
+### Structured action invocation
 
-個別メソッドを直接呼んでもよいが、AI からは `AgentActionRequest` を使った `invoke()` のほうが安定して扱いやすい。
+Individual methods can be called directly, but `invoke()` using `AgentActionRequest` is more stable and convenient for AI agents.
 
 ```python
 actions = document.agent_actions()
@@ -290,7 +292,7 @@ submit = actions.invoke(
 )
 ```
 
-主な `action`:
+Main `action` values:
 
 - `set_text`
 - `append_text`
@@ -302,23 +304,23 @@ submit = actions.invoke(
 - `click_button`
 - `debug_control`
 
-返り値 `AgentActionResult` には、`status`、`reason`、`available_actions`、`requires_confirmation`、`changed`、`submission`、`button_click`、`debug` が入り、成功時も失敗時も例外ではなく構造化結果として扱える。
+The returned `AgentActionResult` contains `status`, `reason`, `available_actions`, `requires_confirmation`, `changed`, `submission`, `button_click`, and `debug`, allowing both success and failure to be handled as structured results rather than exceptions.
 
-主な `status`:
+Main `status` values:
 
-- `ok`: 実行または preflight が成功した
-- `not_found`: 対象 `control_id` が見つからない
-- `unsupported`: その control ではその action を使えない
-- `blocked`: policy により最終効果が止められた
-- `requires_confirmation`: 実行前に追加確認が必要
+- `ok`: Execution or preflight successful
+- `not_found`: Target `control_id` not found
+- `unsupported`: That action cannot be used with that control.
+- `blocked`: Final effect stopped by policy
+- `requires_confirmation`: Additional confirmation required before execution
 
-主な補助フィールド:
+Main supplementary fields:
 
-- `reason`: `control_not_found` / `action_not_supported_for_control` / `blocked_by_policy` / `password_input_requires_confirmation` などの機械判定用コード
-- `available_actions`: その control で許される action の一覧
-- `requires_confirmation`: 再確認付きで同じ request を投げ直すべきケースかどうか
+- `reason`: Machine judgment code such as `control_not_found` / `action_not_supported_for_control` / `blocked_by_policy` / `password_input_requires_confirmation`
+- `available_actions`: List of actions allowed for that control
+- `requires_confirmation`: Is it a case to resubmit the same request with reconfirmation?
 
-たとえば password input は、既定では `requires_confirmation` を返して値注入を止める。明示的に許可する場合だけ `confirmed=True` を付けて再実行する。
+For example, password inputs return `requires_confirmation` by default and block value injection. Retry with `confirmed=True` only when explicitly permitted.
 
 ```python
 password_result = actions.invoke(
@@ -340,9 +342,9 @@ if password_result.status == "requires_confirmation":
   )
 ```
 
-### control デバッグ情報
+### Control debugging information
 
-button click や form submit を調べたいときは、実行前に `debug_control()` / `debug_controls()` で構造化された説明を取れる。
+When you want to check button click or form submit, you can get a structured explanation using `debug_control()` / `debug_controls()` before execution.
 
 ```python
 actions = document.agent_actions()
@@ -354,17 +356,17 @@ print(debug.form_action)
 print(debug.submit_preview.url if debug.submit_preview is not None else "")
 ```
 
-主なフィールド:
+Main fields:
 
 - `kind`: `text` / `textarea` / `select` / `checkbox` / `radio` / `submit` / `button` / `tab`
-- `tag`: 実 DOM のタグ名
-- `form_action`, `form_method`: form owner がある場合の送信先
-- `submit_preview`: submit control の場合の `ControlSubmissionPreview`
+- `tag`: Real DOM tag name
+- `form_action`, `form_method`: Destination if form owner exists
+- `submit_preview`: `ControlSubmissionPreview` for submit control
 - `click_hint`: `submit` / `disclosure_toggle` / `tab_activation` / `navigation` / `javascript`
-- `controlled_target`: `aria-controls` がある場合の対象 ID
-- `navigation_target`: class-based tab などで遷移先を事前推定できる場合の URL
+- `controlled_target`: Target ID if `aria-controls` is present
+- `navigation_target`: URL when transition destination can be estimated in advance using class-based tab etc.
 
-### control 一覧
+### Listing controls
 
 ```python
 controls = document.form_controls()
@@ -372,13 +374,13 @@ for control in controls:
   print(control.control_id, control.kind, control.name, control.value)
 ```
 
-checkbox だけ見たい場合:
+If you only want to see the checkbox:
 
 ```python
 checkboxes = document.checkbox_controls()
 ```
 
-### テキスト系 control の編集
+### Editing text controls
 
 ```python
 actions.append_text_to_control("q", " more")
@@ -386,7 +388,7 @@ actions.backspace_control_text("q")
 actions.set_text_control("q", "search term")
 ```
 
-同じ `name` を持つ mirrored input がある場合も同期される。
+Mirrored inputs sharing the same `name` are synchronized.
 
 ### select / radio / checkbox
 
@@ -397,9 +399,9 @@ actions.select_radio_control("scope-all")
 actions.toggle_checkbox("safe")
 ```
 
-### submit 情報の組み立て
+### Constructing submission data
 
-`submit_form_control(control_id, current_source)` は即 fetch せず、送信内容を `FormSubmission` として返す。
+`submit_form_control(control_id, current_source)` returns submission data as `FormSubmission` without fetching immediately.
 
 ```python
 submission = actions.submit_form_control("tweb-button-1", "https://example.com/form")
@@ -410,12 +412,12 @@ if submission is not None:
   print(submission.form_data())
 ```
 
-- GET form では `url()` が便利
-- POST form では `form_data()` をそのまま `fetch_resource(..., method="post", form_data=...)` に渡せる
+- `url()` is useful for GET form
+- In POST form, `form_data()` can be passed as is to `fetch_resource(..., method="post", form_data=...)`
 
 ### JavaScript button click
 
-`type="button"` のような JS 駆動 button は `click_button_control()` で扱う。低レベル API の既定 policy は保守的に `dom-only` のままにしてあり、TUI の既定値 `network` とは分けている。
+JS-driven buttons like `type="button"` are handled by `click_button_control()`. The default policy for the low-level API is conservatively left at `dom-only`, which is different from the TUI default policy `network`.
 
 ```python
 result = actions.click_button_control("login-button", policy="dom-only")
@@ -424,13 +426,13 @@ print(result.clicked, result.classification, result.dom_changed)
 
 `policy`:
 
-- `"off"`: 実行しない
-- `"dom-only"`: DOM 更新だけ許容し、通信や遷移は block
-- `"network"`: 通信や遷移も許容
+- `"off"`: Do not execute
+- `"dom-only"`: Only allow DOM updates, block communication and transitions
+- `"network"`: Communication and transitions are also allowed.
 
-`invoke(action="click_button", ...)` では、`dom-only` により navigation が止められた場合は `status="blocked"` と `reason="blocked_by_policy"` を返す。network request だけが止められても click と DOM 更新が成立していれば `status="ok"` のままにし、`button_click.blocked_by_policy` と `button_click.classification` で `network_requested` を確認できる。
+`invoke(action="click_button", ...)` returns `status="blocked"` and `reason="blocked_by_policy"` if navigation is stopped by `dom-only`. Even if only network requests are stopped, if click and DOM update are established, you can leave `status="ok"` as it is and check `network_requested` with `button_click.blocked_by_policy` and `button_click.classification`.
 
-戻り値 `ButtonClickResult` では次のような情報を見られる。
+The returned `ButtonClickResult` exposes information such as the following.
 
 - `clicked`
 - `classification`
@@ -439,11 +441,11 @@ print(result.clicked, result.classification, result.dom_changed)
 - `navigation_target`
 - `network_requests`
 
-## JavaScript 実行
+## JavaScript execution
 
-`tweb` の JS 実行は quick.js ベースで、通常は `TWebDocument` 経由で使う。
+JS execution of `tweb` is based on quick.js and is usually used via `TWebDocument`.
 
-### 任意スクリプトを 1 本実行する
+### Run 1 arbitrary script
 
 ```python
 document.execute_script(
@@ -451,10 +453,10 @@ document.execute_script(
 )
 ```
 
-- `source_url=` を渡すと `document.currentScript.src` 相当の文脈を与えられる
-- 実行後は DOM と interaction 情報が同期される
+- Passing `source_url=` will give you a context equivalent to `document.currentScript.src`
+- DOM and interaction information are synchronized after execution.
 
-### 埋め込み script を実行する
+### Execute embedded scripts
 
 ```python
 document.execute_embedded_scripts(
@@ -462,21 +464,25 @@ document.execute_embedded_scripts(
   session=session,
   browser_render_policy="never",
   use_script_cache=True,
+  render_efficiency=True,
 )
 ```
 
-主な引数:
+Main arguments:
 
-- `ignore_errors`: `False` にすると JS 例外をそのまま上げる
-- `session`: 外部 script や fetch/XHR に使う session
+- `ignore_errors`: If set to `False`, JS exception will be raised as is.
+- `session`: session used for external script and fetch/XHR
 - `browser_render_policy`: `"never" | "auto" | "always"`
-- `use_script_cache`: `URL` 基本で `Vary` に従う `diskcache` ベースの永続 external script file cache を使うかどうか
+- `use_script_cache`: Whether to use the persistent `diskcache`-based external-script file cache, keyed by `URL` with variants respecting `Vary`
+- `render_efficiency`: Defaults to `True`. Suppress additional beacon, explicit telemetry endpoint, image/video/font requests and allow body-stable termination of post-load async drain. Set `False` for comparison or compatibility investigation. Independent of `--main-only`; applies to normal output and the TUI. Does not change Chrome fallback policy.
 
-補助 API:
+Pause this optimization during explicit button operations and use only existing `dom` / `network` permissions for requests. Do not block submissions allowed by `network` through page-loading classifications. Restore the optimization afterward.
 
-- `execute_inline_scripts(ignore_errors=True)`: 外部 script を読まず、inline script だけ実行する
+Helper APIs:
 
-失敗時は `JavaScriptRuntimeError` を捕まえる。
+- `execute_inline_scripts(ignore_errors=True)`: Execute only inline script without reading external script
+
+Catch `JavaScriptRuntimeError` on failure.
 
 ```python
 from tweb import JavaScriptRuntimeError
@@ -487,7 +493,7 @@ except JavaScriptRuntimeError as exc:
   print(exc)
 ```
 
-runtime data 補完の判断を見たいときは `hydration_debug()` を呼べる。
+Call `hydration_debug()` to inspect runtime data supplementation decisions.
 
 ```python
 document.execute_embedded_scripts(ignore_errors=True)
@@ -496,18 +502,23 @@ print(debug["confidence"])
 print(debug["source_summaries"])
 ```
 
-JS-heavy ページで何が重かったかを見たいときは `javascript_debug()` を呼べる。
+If you want to see what's heavy on a JS-heavy page, you can call `javascript_debug()`.
 
 ```python
 document.execute_embedded_scripts(ignore_errors=True, use_script_cache=False)
 debug = document.javascript_debug()
 print(debug["timings_ms"])
 print(debug["script_cache"])
+print(debug["render_efficiency"])
 ```
 
-## 推奨フロー
+`render_efficiency.resource_decisions` returns the most recent 64 classifications, initiators, phases, and permission/blocking reasons. The URL excludes the credentials, query, and fragment, but does not include the request body or authentication header. `async_drain_stops` returns the most recent 32 termination reasons and timer counts, and `body-stable` also includes `quiet_ms` in virtual time. You can check the total number of cases at `counts` and the inspection time for the main text at `timings_ms.body_stability_probe`.
 
-読み取り中心なら次の形が基本になる。
+Initial body-stability targets are pages with at least 200 characters and paragraph/heading structure in CSS-visible `main` / `article` / `role=main` regions. Compare body, links, and input state every 8 timers; stop async drain after at least 500ms of virtual time without changes or new content-candidate requests. Do not leave currently runnable timers or microtasks pending. Sparse content, missing explicit body regions, or probe-limit violations use existing budgets. Future timer-generated content is not guaranteed; compare with `render_efficiency=False` if early termination is suspected.
+
+## Recommended workflow
+
+Use the following basic workflow for read-oriented usage.
 
 ```python
 from tweb import TWebDocument, fetch_resource, parse_document
@@ -519,7 +530,7 @@ print(document.title)
 print(document.body_text())
 ```
 
-AI 向けに構造化された読み取り結果がほしいなら snapshot を使う。
+If you want structured read results for AI, use snapshot.
 
 ```python
 snapshot = document.snapshot(max_depth=2)
@@ -527,7 +538,7 @@ payload = snapshot.to_dict()
 print(payload["title"])
 ```
 
-認証付きページや script 依存ページなら session を渡す。
+Pass a session for authenticated or script-dependent pages.
 
 ```python
 from requests.cookies import RequestsCookieJar
@@ -545,20 +556,20 @@ finally:
   session.close()
 ```
 
-## 現状の境界
+## Current boundaries
 
-- 公開 API の中心は `TWebDocument` と `TWebElement`
-- `QuickJSRuntime` は低レベル API なので、通常は直接使わない
-- selector はフル CSS 互換ではなく、実装済みの簡易 subset
-- JS 実行は quick.js ベースで、ブラウザ完全互換ではない
-- form submit は送信内容の組み立てまでが主で、実際の遷移や再取得は呼び出し側で行う
-- AI 向けの構造化読み取りは `snapshot()`、副作用のある変更系は `agent_actions()` に分ける
-- `snapshot().form_controls[*].supported_actions` を見れば、どの変更系 API を許すかを read-only 側だけで判断できる
+- The public API centers on `TWebDocument` and `TWebElement`.
+- `QuickJSRuntime` is a low-level API, so it is usually not used directly.
+- Selectors implement a simple subset rather than full CSS compatibility.
+- JS execution is quick.js based and not fully browser compatible
+- Form submission primarily constructs the submission data; callers perform navigation and fetching.
+- Structured reading for AI is divided into `snapshot()`, and modification with side effects is divided into `agent_actions()`.
+- By looking at `snapshot().form_controls[*].supported_actions`, only the read-only side can determine which modification APIs are allowed.
 
-## 関連ドキュメント
+## Related documents
 
-- `README.md`: CLI 中心の使い方
-- `DOM.md`: DOM 表示方針
-- `CSS.md`: CSS 解釈方針
-- `JS.md`: JavaScript の実装状況と制約
-- `TUI.md`: TUI 操作仕様
+- `README.md`: CLI-centered usage
+- `DOM.md`: DOM display policy
+- `CSS.md`: CSS interpretation policy
+- `JS.md`: JavaScript implementation status and constraints
+- `TUI.md`: TUI operation specifications

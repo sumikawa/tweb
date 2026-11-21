@@ -1,39 +1,42 @@
+[English](README.md) | [日本語](README.ja.md)
+
 # tweb
 
-`tweb` は、Web ページをテキストとして読みやすく表示しつつ、必要に応じて DOM や JavaScript 実行結果も確認できるテキストベースのブラウザです。CLI は `tw` に一本化し、既定では TUI として起動します。
+`tweb` is a text-based browser that displays web pages as readable text and lets you inspect the DOM and JavaScript execution results. Its single CLI command, `tw`, starts the TUI by default.
 
-AI やスクリプトから扱いやすい Python API も用意しており、本文抽出、リンク列挙、DOM 調査、フォームや Cookie を使った取得まで同じ基盤で扱えます。
+A Python API provides the same foundation for AI agents and scripts to extract text, list links, inspect the DOM, and fetch pages using forms and cookies.
 
-## できること
+## Features
 
-- 通常表示で本文を読みやすいテキストとして確認する
-- `dom` / `dom-ai` でページ構造を調べる
-- `tw` でキーボード中心の TUI ブラウザとして使う
-- `tw --mode text|dom|dom-ai` で同じコマンドから通常表示や DOM 表示へ切り替える
-- Cookie を付けてページを開く
-- JavaScript 実行後の内容を表示する
-- QuickJS だけでは崩れるページで browser-render fallback を使う
-- Python ライブラリとして本文・リンク・DOM を扱う
+- Read page content as formatted text
+- Inspect page structure with `dom` / `dom-ai`
+- Browse with the keyboard in the `tw` TUI
+- Switch between text and DOM output with `tw --mode text|dom|dom-ai`
+- Open pages with cookies
+- Display content after JavaScript execution
+- Suppress unnecessary QuickJS network requests and finish post-load processing early when page content stabilizes (see [API.md](docs/API.md) for details and how to disable this)
+- Use browser-render fallback for pages that QuickJS cannot render correctly
+- Work with text, links, and the DOM from Python
 
-## インストール
+## Installation
 
-Python 3.12 以上を前提にしています。
+Python 3.12 or later is required.
 
 ```bash
 uv tool install --from . tweb
 ```
 
-または:
+Or:
 
 ```bash
 python3 -m pip install .
 ```
 
-どちらの方法でも `tw` が入ります。
+Both methods install `tw`.
 
-## 使い始める
+## Getting started
 
-`example.com` のように URL scheme を省略した入力は `http://example.com` として扱います。ローカルファイルは `./page.html` や `/tmp/sample.html` のようにパスで渡せます。引数を省略した場合は welcome ページを TUI で表示します。
+Inputs without a URL scheme, such as `example.com`, are treated as `http://example.com`. Pass local files as paths such as `./page.html` or `/tmp/sample.html`. With no arguments, `tw` opens the welcome page in the TUI.
 
 TUI:
 
@@ -42,37 +45,37 @@ tw https://example.com
 tw ./page.html
 ```
 
-通常表示:
+Text output:
 
 ```bash
 tw https://example.com --mode text
 tw https://example.com/article --mode text --main-only
 ```
 
-DOM 表示:
+DOM summary:
 
 ```bash
 tw https://example.com --mode dom
 ```
 
-AI 向け詳細 DOM:
+Detailed DOM for AI agents:
 
 ```bash
 tw https://example.com --mode dom-ai
 ```
 
-`--width` を省略した場合は現在のターミナル幅を使い、取得できない場合は `80` を使います。`--link-style` の既定値は `none` です。
-`--main-only` を付けると `text` モードでは表示可能な `<main>`、`<article>` を優先し、該当する要素がないページでは本文らしいコンテナを推定して描画します。非表示の祖先内や `template` 内の要素は候補に含めません。候補が見つからない場合は `<body>` 全体に戻ります。
+Without `--width`, the current terminal width is used, or `80` if it cannot be determined. The default `--link-style` is `none`.
+In `text` mode, `--main-only` prioritizes visible `<main>` and `<article>` elements. If neither is available, it identifies a likely content container. Elements inside hidden ancestors or `template` elements are excluded. If no candidate is found, the entire `<body>` is rendered.
 
-テキストだけを抽出し、画像の `[altテキスト]` / `[image]` 表示を省くには `--no-images` を付けます。`<figcaption>` のキャプションも省略します。本文中のテキストや文字のあるリンクは残ります。画像だけのリンクは表示から除かれます。TUI の通常表示にも適用され、DOM / DOM-AI の検査表示には影響しません。ページ取得や JavaScript の実行を止めるオプションではありません。
+To extract text without image placeholders (`[alt text]` / `[image]`), use `--no-images`. This also omits `<figcaption>` captions. Body text and links containing text remain; image-only links are omitted. The option also applies to the TUI's normal view and leaves DOM / DOM-AI inspection unchanged. It does not disable page fetching or JavaScript execution.
 
 ```bash
 tw https://example.com/article --mode text --main-only --no-images
 ```
 
-## よく使うオプション
+## Common options
 
-Cookie を付ける:
+Use cookies:
 
 ```bash
 tw https://example.com/private --cookie "sessionid=abc123"
@@ -81,14 +84,14 @@ tw https://example.com/private --cookie-from-browser firefox --cookie-domain exa
 tw https://example.com/private --cookie-from-browser zen --cookie-domain example.com
 ```
 
-JavaScript を追加で適用する:
+Apply additional JavaScript:
 
 ```bash
 tw https://example.com --script "document.body.prepend('hello')"
 tw https://example.com --script-file ./patch.js
 ```
 
-browser-render fallback を切り替える:
+Select the browser-render fallback policy:
 
 ```bash
 tw https://example.com/app --browser-render never
@@ -96,35 +99,35 @@ tw https://example.com/app --browser-render auto
 tw https://example.com/app --browser-render always
 ```
 
-デバッグログを出す:
+Write debug logs:
 
 ```bash
 tw https://example.com --debug
 tw https://example.com --debug-log /tmp/tweb-debug.log
 ```
 
-`--debug` は既定では実行ディレクトリの `debug.log` に出力します。`--debug-log` で出力先を変更でき、このオプション単体でも debug logging を有効化します。認証系の値はログ出力時にマスクされます。
+`--debug` writes to `debug.log` in the working directory by default. `--debug-log` changes the destination and enables debug logging on its own. Authentication values are masked in logs.
 
-## 設定ファイル
+## Configuration
 
-`tw` は起動時に `~/.config/tw/config.yml` を読めます。現在は `headers.User-Agent` と top-level の `user_agent` をサポートし、HTTP/HTTPS の既定ヘッダーへ反映します。
+`tw` can read `~/.config/tw/config.yml` at startup. It currently supports `headers.User-Agent` and the top-level `user_agent` setting, applying them to the default HTTP/HTTPS headers.
 
 ```yaml
 headers:
   User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
 ```
 
-または:
+Or:
 
 ```yaml
 user_agent: "My custom agent"
 ```
 
-一時的に別ファイルを使う場合は `TW_CONFIG_PATH=/path/to/config.yml` を指定します。
+To use a different file temporarily, set `TW_CONFIG_PATH=/path/to/config.yml`.
 
 ## Python API
 
-最小例:
+Minimal example:
 
 ```python
 from tweb import TWebDocument, fetch_resource, parse_document
@@ -138,15 +141,15 @@ for link in document.links():
   print(link.text, link.href)
 ```
 
-API の詳細は [docs/API.md](docs/API.md) を参照してください。
+See [docs/API.md](docs/API.md) for the full API documentation.
 
-## 詳細ドキュメント
+## Documentation
 
-- [docs/TUI.md](docs/TUI.md): TUI の操作仕様とキーバインド
-- [docs/API.md](docs/API.md): Python ライブラリ API
-- [docs/DOM.md](docs/DOM.md): `dom` / `dom-ai` の表示方針
-- [docs/CSS.md](docs/CSS.md): CSS 解釈の方針
-- [docs/JS.md](docs/JS.md): JavaScript 実行と browser-render fallback
-- [docs/SECURITY.md](docs/SECURITY.md): セキュリティ方針と未実装項目
-- [docs/PLAN.md](docs/PLAN.md): 開発計画
-- [docs/performance.md](docs/performance.md): 品質監査と性能計測の記録
+- [docs/TUI.md](docs/TUI.md): TUI behavior and key bindings
+- [docs/API.md](docs/API.md): Python library API
+- [docs/DOM.md](docs/DOM.md): `dom` / `dom-ai` output policies
+- [docs/CSS.md](docs/CSS.md): CSS interpretation
+- [docs/JS.md](docs/JS.md): JavaScript execution and browser-render fallback
+- [docs/SECURITY.md](docs/SECURITY.md): Security policies and outstanding work
+- [docs/PLAN.md](docs/PLAN.md): Development plan
+- [docs/performance.md](docs/performance.md): Quality audits and performance measurements
